@@ -68,6 +68,24 @@ DotProduct :: proc(v1: Point, v2: Point) -> f64 {
 	return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z
 }
 
+GetDistance :: proc(point1: Point, point2: Point) -> Point {
+	return Point{point2.x - point1.x, point2.y - point1.y, point2.z - point1.z}
+}
+
+Add :: proc(point1: Point, point2: Point) -> Point {
+	return Point{point2.x + point1.x, point2.y + point1.y, point2.z + point1.z}
+}
+
+Mult :: proc(p: Point, a: f64) -> Point {
+	return Point{p.x * a, p.y * a, p.z * a}
+}
+
+NormalizeVector :: proc(vec: Point) -> Point{
+	totalLength := math.sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z)
+	return {vec.x / totalLength, vec.y / totalLength, vec.z / totalLength}
+
+}
+
 SplitShapeToTriangles :: proc(shape: [dynamic]Node) {
 	for i := 0; i < len(nodes); i = i + 1 {
 		firstPoint := nodes[i]
@@ -76,6 +94,31 @@ SplitShapeToTriangles :: proc(shape: [dynamic]Node) {
 		
 	}
 	//TODO: Implement
+}
+
+CheckCollision2 :: proc(start: Point, direction: Point, triangle: Triangle) -> f64{
+	v1 := Point{triangle.point2.x - triangle.point1.x, triangle.point2.y - triangle.point1.y, triangle.point2.z - triangle.point1.z}
+	v2 := Point{triangle.point3.x - triangle.point1.x, triangle.point3.y - triangle.point1.y, triangle.point3.z - triangle.point1.z}
+	//zwei Variablen eliminieren, indem das skalarprodukt mit einem mit v2 und d orthogonalen Vektoren genommen wird, wodurch die Terme wefallen
+	pvec := CrossProduct(direction, v2)
+	det := DotProduct(pvec, v1)
+
+	if (det < 0.00001 && det > -0.00001){ //direction parallel zur Ebene
+		return -1
+	}
+	length1 := DotProduct(Point{start.x - triangle.point1.x, start.y - triangle.point1.y, start.z - triangle.point1.z}, pvec) / det
+
+	if (length1 < 0.0 || length1 > 1.0) {
+		return -1
+	}
+	tvec := Point{start.x - triangle.point1.x, start.y - triangle.point1.y, start.z - triangle.point1.z}
+	qvec := CrossProduct(tvec, v1)
+	length2 := DotProduct(direction, qvec) / det
+	if (length2 < 0.0 || length1 + length2 > 1.0){
+		return -1
+	}
+	lengthBeam := DotProduct(v2, qvec) / det
+	return lengthBeam
 }
 
 CheckCollision :: proc(direction: Point, triangle: Triangle) -> f64{
@@ -122,15 +165,13 @@ GetDirectionFromAngle :: proc(angleHorizontal: f64, angleVertical: f64) -> Point
 
 	x: f64 = math.cos(aH)
 	y: f64 = math.sin(aH)
-
 	length :f64 = math.sqrt(x * x + y * y)
 	z: f64 = math.tan(aV - 0.5 * math.PI) * length //default height is 0.5 * PI
-	totalLength := math.sqrt(x * x + y * y + z * z)
-	return {x / totalLength, y / totalLength, z / totalLength}
+	return NormalizeVector(Point{x, y, z})
 }
 
 MovePlayer :: proc () {
-	speed: f64 = 1 //units per second
+	speed: f64 = 4 //units per second
 	d := time.duration_seconds(time.since(lastTime))
 	direction: Point
 	if (walkingForward) {
@@ -159,16 +200,24 @@ RenderWindow :: proc() {
 	pixels := slice.from_ptr(cast(^u32)bitmapMemory, cast(int)(bitmapHeight * bitmapWidth))
 	windowX, windowY, windowWidth, windowHeight = DrawDynamicAreaCentered(1, 16.0/9.0, 0x00FFFFFF)
 	fovHorizontal = f64(windowWidth) / f64(windowHeight) * f64(fovVertical)
+	playerDirection: Point = GetDirectionFromAngle(playerDirectionHorizontal, playerDirectionVertical)
+	horVec: Point = CrossProduct(playerDirection, Point{0, 0, 1})
+	vertVec: Point = CrossProduct(playerDirection, horVec)
+	vertVec = NormalizeVector(vertVec)
+	horVec = NormalizeVector(horVec)
+
+	angleHorizontal := playerDirectionHorizontal
+	angleVertical := playerDirectionVertical
+	direction: Point = GetDirectionFromAngle(angleHorizontal, angleVertical)
+
 	for i: u32 = 0; i < windowHeight; i = i + 1 {
 		section := pixels[windowX + (i + windowY) * bitmapWidth:windowX + windowWidth + (i + windowY) * bitmapWidth]
-		angleVertical: f64 = (-f64(i) / f64(windowHeight) + 0.5) * fovVertical + playerDirectionVertical
 		for j: u32 = 0; j < windowWidth; j = j + 1 {
-			angleHorizontal: f64 = (-f64(j) / f64(windowWidth) + 0.5) * fovHorizontal + playerDirectionHorizontal
-			direction: Point = GetDirectionFromAngle(angleHorizontal, angleVertical)
 			shortestBeam : f64 = -1
 			shortestBeamColor: u32 = 0x00000000
 			for triangle in triangles {
-				beamLength: f64 = CheckCollision(direction, triangle)
+				pixelDirection: Point = Add(Add(direction, Mult(horVec, (f64(j) - f64(windowWidth) / 2.0) / 200.0)), Mult(vertVec, (f64(i) - f64(windowHeight) / 2.0) / 200))
+				beamLength: f64 = CheckCollision2(playerPosition, pixelDirection, triangle)
 				if (beamLength > 0 && (beamLength < shortestBeam || shortestBeam < 0)) {
 					shortestBeam = beamLength
 					shortestBeamColor = triangle.color
@@ -233,7 +282,7 @@ main :: proc() {
 				bottom = bottomRight.y,
 			}
 
-
+			win.ShowCursor(false)
 			//win.MapWindowPoints(window, nil, win.LPPOINT(&rect), 2)
 			win.ClipCursor(&screenRect)
 			for running {
@@ -258,7 +307,8 @@ main :: proc() {
 
 				if (time.since(secondTimer) >= time.Second){
 					fmt.println("done, took", time.since(currentTime))
-					fmt.println(playerPosition)
+					fmt.println(playerPosition, GetDirectionFromAngle(playerDirectionHorizontal, playerDirectionVertical))
+
 					secondTimer = time.now()
 
 				}
