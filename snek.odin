@@ -1,6 +1,7 @@
 package snek
 
 
+
 import "base:runtime"
 import "core:fmt"
 import "core:math"
@@ -167,7 +168,8 @@ GetDirectionFromAngle :: proc(angleHorizontal: f64, angleVertical: f64) -> Point
 	y: f64 = math.sin(aH)
 	length :f64 = math.sqrt(x * x + y * y)
 	z: f64 = math.tan(aV - 0.5 * math.PI) * length //default height is 0.5 * PI
-	return NormalizeVector(Point{x, y, z})
+	res := NormalizeVector(Point{x, y, z})
+	return res
 }
 
 MovePlayer :: proc () {
@@ -175,16 +177,16 @@ MovePlayer :: proc () {
 	d := time.duration_seconds(time.since(lastTime))
 	direction: Point
 	if (walkingForward) {
-		direction = GetDirectionFromAngle(playerDirectionHorizontal, playerDirectionVertical)
+		direction = GetDirectionFromAngle(playerDirectionHorizontal, 0.5 * math.PI)
 	}
 	if (walkingBackwards) {
-		direction = GetDirectionFromAngle(playerDirectionHorizontal + math.PI, playerDirectionVertical)
+		direction = GetDirectionFromAngle(playerDirectionHorizontal + math.PI, 0.5 * math.PI)
 	}
 	if (walkingLeft) {
-		direction = GetDirectionFromAngle(playerDirectionHorizontal + 0.5 * math.PI, playerDirectionVertical)
+		direction = GetDirectionFromAngle(playerDirectionHorizontal + 0.5 * math.PI, 0.5 * math.PI)
 	}
 	if (walkingRight) {
-		direction = GetDirectionFromAngle(playerDirectionHorizontal - 0.5 * math.PI, playerDirectionVertical)
+		direction = GetDirectionFromAngle(playerDirectionHorizontal - 0.5 * math.PI, 0.5 * math.PI)
 	}
 	if (flying) {
 		direction = {0, 0, 1}
@@ -216,7 +218,7 @@ RenderWindow :: proc() {
 			shortestBeam : f64 = -1
 			shortestBeamColor: u32 = 0x00000000
 			for triangle in triangles {
-				pixelDirection: Point = Add(Add(direction, Mult(horVec, (f64(j) - f64(windowWidth) / 2.0) / 200.0)), Mult(vertVec, (f64(i) - f64(windowHeight) / 2.0) / 200))
+				pixelDirection: Point = Add(Add(direction, Mult(horVec, (f64(j) - f64(windowWidth) / 2.0) / 400.0)), Mult(vertVec, (f64(i) - f64(windowHeight) / 2.0) / 400))
 				beamLength: f64 = CheckCollision2(playerPosition, pixelDirection, triangle)
 				if (beamLength > 0 && (beamLength < shortestBeam || shortestBeam < 0)) {
 					shortestBeam = beamLength
@@ -259,10 +261,16 @@ main :: proc() {
 		if (window != nil) {
 
 
-			triangle: Triangle = Triangle{Point{3.0, -1.0, 0.0}, Point{3.0, 1.0, 0.0}, Point{3.0, 0.0, 2.0}, 0x00FF00FF }
+			triangle: Triangle = Triangle{Point{3.0, -1.0, 0.0}, Point{3.0, 1.0, 0.0}, Point{4.0, 0.0, 2.0}, 0x00FF00DF }
+			triangle2: Triangle = Triangle{Point{5.0, -1.0, 0.0}, Point{3.0, -1.0, 0.0}, Point{4.0, 0.0, 2.0}, 0x00FF00AF }
+			triangle3: Triangle = Triangle{Point{5.0, 1.0, 0.0}, Point{3.0, 1.0, 0.0}, Point{4.0, 0.0, 2.0}, 0x00FF009F }
+			triangle4: Triangle = Triangle{Point{5.0, -1.0, 0.0}, Point{5.0, 1.0, 0.0}, Point{4.0, 0.0, 2.0}, 0x00FF007F }
 			floor: Triangle = Triangle{Point{-100, -100, 0.0}, Point{100, -100, 0.0}, Point{100, 100, 0.0}, 0x0000FF00 }
 			floor2: Triangle = Triangle{Point{-100, -100, 0.0}, Point{-100, 100, 0.0}, Point{100, 100, 0.0}, 0x0000FF00 }
 			append(&triangles, triangle)
+			append(&triangles, triangle2)
+			append(&triangles, triangle3)
+			append(&triangles, triangle4)
 			append(&triangles, floor)
 			append(&triangles, floor2)
 
@@ -284,8 +292,8 @@ main :: proc() {
 
 			win.ShowCursor(false)
 			//win.MapWindowPoints(window, nil, win.LPPOINT(&rect), 2)
-			win.ClipCursor(&screenRect)
 			for running {
+				//win.ClipCursor(&screenRect)
 				message: win.MSG
 				for win.PeekMessageW(&message, nil, 0, 0, win.PM_REMOVE) {
 					if (message.message == win.WM_QUIT) {
