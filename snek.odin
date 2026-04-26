@@ -1,7 +1,6 @@
 package snek
 
 
-
 import "base:runtime"
 import "core:fmt"
 import "core:math"
@@ -44,86 +43,6 @@ windowY: u32
 windowWidth: u32
 windowHeight: u32
 
-Point :: struct {
-	x:		f64,
-	y:		f64,
-	z:		f64 // Height
-}
-
-Triangle :: struct {
-	point1:		Point,
-	point2:		Point,
-	point3:		Point,
-	color:		u32
-}
-
-CrossProduct :: proc(v1: Point, v2: Point) -> Point {
-	return Point{
-		v1.y * v2.z - v1.z * v2.y,
-		v1.z * v2.x - v1.x * v2.z,
-		v1.x * v2.y - v1.y * v2.x
-	}
-}
-
-DotProduct :: proc(v1: Point, v2: Point) -> f64 {
-	return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z
-}
-
-GetDistance :: proc(point1: Point, point2: Point) -> Point {
-	return Point{point2.x - point1.x, point2.y - point1.y, point2.z - point1.z}
-}
-
-Add :: proc(point1: Point, point2: Point) -> Point {
-	return Point{point2.x + point1.x, point2.y + point1.y, point2.z + point1.z}
-}
-
-Mult :: proc(p: Point, a: f64) -> Point {
-	return Point{p.x * a, p.y * a, p.z * a}
-}
-
-NormalizeVector :: proc(vec: Point) -> Point{
-	totalLength := math.sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z)
-	return {vec.x / totalLength, vec.y / totalLength, vec.z / totalLength}
-
-}
-
-SplitShapeToTriangles :: proc(shape: [dynamic]Node) {
-	for i := 0; i < len(nodes); i = i + 1 {
-		firstPoint := nodes[i]
-		midPoint := nodes[i + 1]
-
-		
-	}
-	//TODO: Implement
-}
-
-CheckCollision :: proc(start: Point, direction: Point, triangle: Triangle) -> f64{
-	v1 := GetDistance(triangle.point1, triangle.point2)
-	v2 := GetDistance(triangle.point1, triangle.point3)
-	//
-	//
-	//zwei Variablen eliminieren, indem das skalarprodukt mit einem mit v2 und d orthogonalen Vektoren genommen wird, wodurch die Terme wefallen
-	pvec := CrossProduct(direction, v2)
-	det := DotProduct(pvec, v1)
-
-	if (det < 0.00001 && det > -0.00001){ //direction parallel zur Ebene
-		return -1
-	}
-	length1 := DotProduct(Point{start.x - triangle.point1.x, start.y - triangle.point1.y, start.z - triangle.point1.z}, pvec) / det
-
-	if (length1 < 0.0 || length1 > 1.0) {
-		return -1
-	}
-	tvec := Point{start.x - triangle.point1.x, start.y - triangle.point1.y, start.z - triangle.point1.z}
-	qvec := CrossProduct(tvec, v1)
-	length2 := DotProduct(direction, qvec) / det
-	if (length2 < 0.0 || length1 + length2 > 1.0){
-		return -1
-	}
-	lengthBeam := DotProduct(v2, qvec) / det
-	return lengthBeam
-}
-
 TimeFunction :: proc(func: proc(), repititions: int){
 	startTime := time.now()	
 
@@ -150,31 +69,6 @@ TimeFunction :: proc(func: proc(), repititions: int){
 	}
 	average := sum / time.Duration(repititions)
 	fmt.println("max:", maxValue, "min:", minValue, "average:", average)
-}
-
-GetDirectionFromAngle :: proc(angleHorizontal: f64, angleVertical: f64) -> Point{
-	//TODO: normalize Vector length
-	aH := math.mod(angleHorizontal, 2 * math.PI)
-
-	if (aH < 0){
-		aH = aH + 2 * math.PI
-	}
-
-	aV := angleVertical
-	if (aV < 0){
-		aV = 0
-	}
-
-	if (angleVertical > math.PI){
-		aV = math.PI
-	}
-
-	x: f64 = math.cos(aH)
-	y: f64 = math.sin(aH)
-	length :f64 = math.sqrt(x * x + y * y)
-	z: f64 = math.tan(aV - 0.5 * math.PI) * length //default height is 0.5 * PI
-	res := NormalizeVector(Point{x, y, z})
-	return res
 }
 
 MovePlayer :: proc () {
@@ -297,9 +191,8 @@ main :: proc() {
 
 			win.ShowCursor(false)
 			//win.MapWindowPoints(window, nil, win.LPPOINT(&rect), 2)
-			TimeFunction(proc(){RenderWindow()}, 100)
-			TimeFunction(proc(){RenderWindow()}, 100)
-			/*
+			//TimeFunction(proc(){RenderWindow()}, 100)
+			//TimeFunction(proc(){RenderWindow()}, 100)
 			for running {
 				//win.ClipCursor(&screenRect)
 				message: win.MSG
@@ -331,7 +224,6 @@ main :: proc() {
 				lastTime = currentTime
 				currentTime = time.now()
 			}
-			*/
 
 		} else {
 			//logging
@@ -490,176 +382,3 @@ Win32UpdateWindow :: proc(
 	)
 }
 
-//----------------------------------------------2D------------------------------------------------
-
-Node :: struct {
-	x:		f16,
-	y:		f16,
-	accountedFor:	bool,
-}
-
-DrawDynamicAreaCentered :: proc(
-	screenOccupiedRatio: f16,
-	widthToHeight: f16,
-	color: u32,
-) -> (
-	u32,
-	u32,
-	u32,
-	u32,
-) {
-	width: u32 = cast(u32)(screenOccupiedRatio * cast(f16)bitmapHeight * widthToHeight)
-	height: u32 = cast(u32)(screenOccupiedRatio * cast(f16)bitmapHeight)
-	startX: u32
-	startY: u32
-	if (width < cast(u32)(cast(f16)bitmapWidth * screenOccupiedRatio)) {
-		startX = ((bitmapWidth - width) / 2)
-		startY = cast(u32)((1 - screenOccupiedRatio) * cast(f16)bitmapHeight / 2)
-		DrawRectangle(startX, startY, width, height, color)
-	} else {
-		startX = (bitmapWidth - width) / 2
-		startY = (bitmapHeight - height) / 2
-		width = cast(u32)(cast(f16)bitmapWidth * screenOccupiedRatio)
-		height = cast(u32)(cast(f16)width / widthToHeight)
-		DrawRectangle(startX, startY, width, height, color)
-	}
-	return startX, startY, width, height
-}
-
-DrawHollowRectangle :: proc(x: u32, y: u32, width: u32, height: u32, thickness: u32) {
-	pixels := slice.from_ptr(cast(^u32)bitmapMemory, cast(int)(bitmapHeight * bitmapWidth))
-	counter: u32 = 0
-	for i: u32 = 0; i < thickness; i = i + 1 {
-		section := pixels[x + (i + y) * bitmapWidth:x + width + (i + y) * bitmapWidth]
-		for &pixel in section {
-			pixel = 0x00FFFFFF
-		}
-	}
-	for i: u32 = 0; i < height - 2 * thickness; i = i + 1 {
-		section := pixels[x +
-		(i + y + thickness) * bitmapWidth:x +
-		width +
-		(i + y + thickness) * bitmapWidth]
-		counter: u32 = 0
-		for &pixel in section {
-			if (counter < thickness || counter > u32(width - thickness)) {
-				pixel = 0x00FFFFFF
-			}
-			counter = counter + 1
-		}
-	}
-	for i: u32 = 0; i < thickness; i = i + 1 {
-		section := pixels[x +
-		(i + y + height - thickness) * bitmapWidth:x +
-		width +
-		(i + y + height - thickness) * bitmapWidth]
-		for &pixel in section {
-			pixel = 0x00FFFFFF
-		}
-	}
-}
-
-DrawRectangle :: proc(x: u32, y: u32, width: u32, height: u32, color: u32) {
-	pixels := slice.from_ptr(cast(^u32)bitmapMemory, cast(int)(bitmapHeight * bitmapWidth))
-	counter: u32 = 0
-	for i: u32 = 0; i < height; i = i + 1 {
-		section := pixels[x + (i + y) * bitmapWidth:x + width + (i + y) * bitmapWidth]
-		for &pixel in section {
-			pixel = color
-		}
-	}
-}
-
-RenderWeirdGradient :: proc(blueOffset: u8, greenOffset: u8) {
-	pixels := slice.from_ptr(cast(^u32)bitmapMemory, cast(int)(bitmapHeight * bitmapWidth))
-	counter: u32 = 0
-	for &pixel in pixels {
-		x: u32 = counter % bitmapWidth
-		y: u32 = (counter - x) / bitmapWidth
-		blue: u8 = u8(x) + blueOffset
-		green: u8 = u8(y) + greenOffset
-		pixel = ((u32(green) << 8) | u32(blue))
-		//pixel = 0x8F0000FF
-		//pixel = u32(blue)
-		counter = counter + 1
-	}
-}
-
-CheckCollisionOnNodes :: proc(
-	firstLineStart: Node,
-	firstLineEnd: Node,
-	secondLineStart: Node,
-	secondLineEnd: Node,
-) -> bool {
-	if (firstLineStart.x == secondLineStart.x && firstLineStart.y == secondLineStart.y ||
-		   firstLineStart.x == secondLineEnd.x && firstLineStart.y == secondLineEnd.y ||
-		   firstLineEnd.x == secondLineEnd.x && firstLineEnd.y == secondLineEnd.y ||
-		   firstLineEnd.x == secondLineStart.x && firstLineEnd.y == secondLineStart.y) {
-		return true
-	}
-
-	x1 := firstLineEnd.x - firstLineStart.x
-	lambdaX := (secondLineEnd.x - secondLineStart.x) / x1
-	restX := (secondLineStart.x - firstLineStart.x) / x1
-
-	y1 := firstLineEnd.y - firstLineStart.y
-	lambdaY := (secondLineEnd.y - secondLineStart.y) / y1
-	restY := (secondLineStart.y - firstLineStart.y) / y1
-
-	mu := -(restX - restY) / (lambdaX - lambdaY)
-	lambda := lambdaX * mu + restX
-	collides := mu >= 0 && mu <= 1 && lambda >= 0 && lambda <= 1
-	return collides
-}
-CheckCollisionOnShape :: proc() -> bool {
-	if (len(nodes) < 4) {
-		return false
-	}
-	lastNode := nodes[len(nodes) - 1]
-	secondLastNode := nodes[len(nodes) - 2]
-	for i := 1; i < len(nodes) - 2; i = i + 1 {
-		collides := CheckCollisionOnNodes(nodes[i - 1], nodes[i], lastNode, secondLastNode)
-		if (collides) {
-			remove_range(&nodes, 0, i)
-			return true
-		}
-	}
-	return false
-
-}
-DrawPixel :: proc(x: u32, y: u32, color: u32) {
-	pixels := slice.from_ptr(cast(^u32)bitmapMemory, cast(int)(bitmapHeight * bitmapWidth))
-	pixels[y * bitmapWidth + x] = color
-}
-
-DrawLine :: proc(x: u32, y: u32, otherX: u32, otherY: u32) {
-	x1 := otherX
-	y1 := otherY
-	x2 := x
-	y2 := y
-	if (x > otherX) {
-		x1 = x
-		y1 = y
-		x2 = otherX
-		y2 = otherY
-	}
-	lastY: i32 = cast(i32)y2
-	//cast(u32)(newY - lastY)
-
-	for i := x2; i <= x1; i = i + 1 {
-		newY: i32
-		if (x2 == x1) {
-			newY = cast(i32)y1
-		} else {
-			gradient: f16 = (cast(f16)y1 - cast(f16)y2) / (cast(f16)x1 - cast(f16)x2)
-			newY = (cast(i32)(gradient * cast(f16)(i - x2))) + cast(i32)y2
-
-		}
-		if (newY > lastY) {
-			DrawRectangle(i, cast(u32)(lastY), 1, cast(u32)(newY - lastY) + 1, 0x0000FF00)
-		} else {
-			DrawRectangle(i, cast(u32)(newY), 1, cast(u32)(lastY - newY) + 1, 0x0000FF00)
-		}
-		lastY = newY
-	}
-}

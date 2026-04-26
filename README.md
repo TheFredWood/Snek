@@ -7,9 +7,10 @@ Features:
 -Umsehen ist Möglich mit der Maus.
 -Rohdaten der Maus werden abgegriffen und der Cursor wird im Fenster eingesperrt
 -Optimiere darstellung der Formen (bisher haben Formen ungewollte Rundungen durch die Berechnung der Strahlen)
+-Timing/Benchmarking einrichten für einzelne Funktionen
+->etwa 21ms pro frame
 
 Gesplante Features:
--Timing/Benchmarking einrichten für einzelne Funktionen
 -Optimierung durch Multithreading
 -Optimierung durch SIMD
 -Darstellung von Texturen
