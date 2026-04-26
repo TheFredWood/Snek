@@ -97,9 +97,11 @@ SplitShapeToTriangles :: proc(shape: [dynamic]Node) {
 	//TODO: Implement
 }
 
-CheckCollision2 :: proc(start: Point, direction: Point, triangle: Triangle) -> f64{
-	v1 := Point{triangle.point2.x - triangle.point1.x, triangle.point2.y - triangle.point1.y, triangle.point2.z - triangle.point1.z}
-	v2 := Point{triangle.point3.x - triangle.point1.x, triangle.point3.y - triangle.point1.y, triangle.point3.z - triangle.point1.z}
+CheckCollision :: proc(start: Point, direction: Point, triangle: Triangle) -> f64{
+	v1 := GetDistance(triangle.point1, triangle.point2)
+	v2 := GetDistance(triangle.point1, triangle.point3)
+	//
+	//
 	//zwei Variablen eliminieren, indem das skalarprodukt mit einem mit v2 und d orthogonalen Vektoren genommen wird, wodurch die Terme wefallen
 	pvec := CrossProduct(direction, v2)
 	det := DotProduct(pvec, v1)
@@ -122,29 +124,32 @@ CheckCollision2 :: proc(start: Point, direction: Point, triangle: Triangle) -> f
 	return lengthBeam
 }
 
-CheckCollision :: proc(direction: Point, triangle: Triangle) -> f64{
-	v1 := Point{triangle.point2.x - triangle.point1.x, triangle.point2.y - triangle.point1.y, triangle.point2.z - triangle.point1.z}
-	v2 := Point{triangle.point3.x - triangle.point1.x, triangle.point3.y - triangle.point1.y, triangle.point3.z - triangle.point1.z}
-	//zwei Variablen eliminieren, indem das skalarprodukt mit einem mit v2 und d orthogonalen Vektoren genommen wird, wodurch die Terme wefallen
-	pvec := CrossProduct(direction, v2)
-	det := DotProduct(pvec, v1)
+TimeFunction :: proc(func: proc(), repititions: int){
+	startTime := time.now()	
 
-	if (det < 0.00001 && det > -0.00001){ //direction parallel zur Ebene
-		return -1
+	times := make([dynamic]time.Duration, 0, repititions)
+	newTime := time.now()
+	oldTime := time.now()
+	for i := 0; i < repititions; i = i + 1 {
+		func()
+		append(&times, time.since(oldTime))
+		oldTime = time.now()
 	}
-	length1 := DotProduct(Point{playerPosition.x - triangle.point1.x, playerPosition.y - triangle.point1.y, playerPosition.z - triangle.point1.z}, pvec) / det
-
-	if (length1 < 0.0 || length1 > 1.0) {
-		return -1
+	//fmt.println(times)
+	maxValue: time.Duration = times[0]
+	minValue: time.Duration = times[0]
+	sum : time.Duration = times[0]
+	for i := 1; i < repititions; i = i + 1 {
+		sum = sum + times[i]
+		if (times[i] > maxValue) {
+			maxValue = times[i]
+		}
+		if (times[i] < minValue) {
+			minValue = times[i]
+		}
 	}
-	tvec := Point{playerPosition.x - triangle.point1.x, playerPosition.y - triangle.point1.y, playerPosition.z - triangle.point1.z}
-	qvec := CrossProduct(tvec, v1)
-	length2 := DotProduct(direction, qvec) / det
-	if (length2 < 0.0 || length1 + length2 > 1.0){
-		return -1
-	}
-	lengthBeam := DotProduct(v2, qvec) / det
-	return lengthBeam
+	average := sum / time.Duration(repititions)
+	fmt.println("max:", maxValue, "min:", minValue, "average:", average)
 }
 
 GetDirectionFromAngle :: proc(angleHorizontal: f64, angleVertical: f64) -> Point{
@@ -219,7 +224,7 @@ RenderWindow :: proc() {
 			shortestBeamColor: u32 = 0x00000000
 			for triangle in triangles {
 				pixelDirection: Point = Add(Add(direction, Mult(horVec, (f64(j) - f64(windowWidth) / 2.0) / 400.0)), Mult(vertVec, (f64(i) - f64(windowHeight) / 2.0) / 400))
-				beamLength: f64 = CheckCollision2(playerPosition, pixelDirection, triangle)
+				beamLength: f64 = CheckCollision(playerPosition, pixelDirection, triangle)
 				if (beamLength > 0 && (beamLength < shortestBeam || shortestBeam < 0)) {
 					shortestBeam = beamLength
 					shortestBeamColor = triangle.color
@@ -292,6 +297,9 @@ main :: proc() {
 
 			win.ShowCursor(false)
 			//win.MapWindowPoints(window, nil, win.LPPOINT(&rect), 2)
+			TimeFunction(proc(){RenderWindow()}, 100)
+			TimeFunction(proc(){RenderWindow()}, 100)
+			/*
 			for running {
 				//win.ClipCursor(&screenRect)
 				message: win.MSG
@@ -303,7 +311,7 @@ main :: proc() {
 					win.DispatchMessageW(&message)
 				}
 				MovePlayer()
-				RenderWindow()
+				RenderWindow(true)
 
 				deviceContext: win.HDC = win.GetDC(window)
 				clientRect: win.RECT
@@ -323,6 +331,7 @@ main :: proc() {
 				lastTime = currentTime
 				currentTime = time.now()
 			}
+			*/
 
 		} else {
 			//logging
