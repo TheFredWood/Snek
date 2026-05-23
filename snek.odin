@@ -20,9 +20,7 @@ descending: bool = false
 
 lastTime: time.Time = time.now()
 shapeFinished: bool
-nodes: [dynamic]Node
 triangles: [dynamic]Triangle 
-mouseIsDown: bool
 bitmapHandle: win.HBITMAP
 bitmapInfo: win.BITMAPINFO
 bitmapDeviceContext: win.HDC
@@ -33,7 +31,6 @@ bytesPerPixel: u8 = 4
 
 fovVertical: f64 = 90 / 360.0 * 2 * math.PI
 fovHorizontal: f64
-
 playerPosition: Point = {0, 0, 1}
 playerDirectionHorizontal: f64 = 0.0 / 360.0 * 2 * math.PI // Angle from 1, 0 clockwise
 playerDirectionVertical: f64 = 90.0 / 360.0 * 2 * math.PI // Angle from the bottom (0) to top (180)
@@ -54,7 +51,6 @@ TimeFunction :: proc(func: proc(), repititions: int){
 		append(&times, time.since(oldTime))
 		oldTime = time.now()
 	}
-	//fmt.println(times)
 	maxValue: time.Duration = times[0]
 	minValue: time.Duration = times[0]
 	sum : time.Duration = times[0]
@@ -98,27 +94,41 @@ MovePlayer :: proc () {
 }
 
 RenderWindow :: proc() {
+	boundingBoxes: [dynamic]BoundingBox
 	pixels := slice.from_ptr(cast(^u32)bitmapMemory, cast(int)(bitmapHeight * bitmapWidth))
 	windowX, windowY, windowWidth, windowHeight = DrawDynamicAreaCentered(1, 16.0/9.0, 0x00FFFFFF)
 	fovHorizontal = f64(windowWidth) / f64(windowHeight) * f64(fovVertical)
 	playerDirection: Point = GetDirectionFromAngle(playerDirectionHorizontal, playerDirectionVertical)
-	horVec: Point = CrossProduct(playerDirection, Point{0, 0, 1})
-	vertVec: Point = CrossProduct(playerDirection, horVec)
-	vertVec = NormalizeVector(vertVec)
+	upVec: Point = Point{0, 0, 1}
+	horVec: Point = CrossProduct(playerDirection, upVec)
 	horVec = NormalizeVector(horVec)
+	vertVec := CrossProduct(playerDirection, horVec)
+	vertVec = NormalizeVector(vertVec)
+	vertVec = Mult(vertVec, -1)
+	
 
-	angleHorizontal := playerDirectionHorizontal
-	angleVertical := playerDirectionVertical
-	direction: Point = GetDirectionFromAngle(angleHorizontal, angleVertical)
+	frustum: [6]Plane = CreateFrustum(playerPosition, playerDirection)
+	for &triangle in triangles {
+		isInside, boundingBox := CullTriangleToFrustum(&triangle, frustum)
+		if (isInside){
+			append(&boundingBoxes, boundingBox)
+		}
+	}
 
 	for i: u32 = 0; i < windowHeight; i = i + 1 {
 		section := pixels[windowX + (i + windowY) * bitmapWidth:windowX + windowWidth + (i + windowY) * bitmapWidth]
+		relevantTriangles: [dynamic]Triangle
+		for boundingBox in boundingBoxes {
+			if (boundingBox.lowerBounds.y < i && boundingBox.upperBounds.y > i) {
+				append(&relevantTriangles, boundingBox.triangle^)
+			}
+		}
 		for j: u32 = 0; j < windowWidth; j = j + 1 {
 			shortestBeam : f64 = -1
 			shortestBeamColor: u32 = 0x00000000
-			for triangle in triangles {
-				pixelDirection: Point = Add(Add(direction, Mult(horVec, (f64(j) - f64(windowWidth) / 2.0) / 400.0)), Mult(vertVec, (f64(i) - f64(windowHeight) / 2.0) / 400))
-				beamLength: f64 = CheckCollision(playerPosition, pixelDirection, triangle)
+			for triangle in relevantTriangles {
+				pixelplayerDirection: Point = Add(Add(playerDirection, Mult(horVec, (f64(j) - f64(windowWidth) / 2.0) / 400.0)), Mult(vertVec, (f64(windowHeight) / 2.0 - f64(i)) / 400))
+				beamLength: f64 = CheckCollision(playerPosition, pixelplayerDirection, triangle)
 				if (beamLength > 0 && (beamLength < shortestBeam || shortestBeam < 0)) {
 					shortestBeam = beamLength
 					shortestBeamColor = triangle.color
@@ -127,6 +137,7 @@ RenderWindow :: proc() {
 			if (shortestBeam > 0) {
 				section[j] = shortestBeamColor
 			}
+
 		}
 	}
 }
@@ -140,13 +151,13 @@ main :: proc() {
 	windowClass: win.WNDCLASSW = {}
 	windowClass.lpfnWndProc = Win32MainWindowCallback
 	windowClass.hInstance = instance
-	windowClass.lpszClassName = "HandmadeHeroWindowClass"
+	windowClass.lpszClassName = "SnekWindowClass"
 
 	if (win.RegisterClassW(&windowClass) != 0) {
 		window: win.HWND = win.CreateWindowExW(
 			0,
 			windowClass.lpszClassName,
-			"Handmade Hero",
+			"Snek",
 			win.WS_OVERLAPPEDWINDOW | win.WS_VISIBLE,
 			win.CW_USEDEFAULT,
 			win.CW_USEDEFAULT,
@@ -192,7 +203,10 @@ main :: proc() {
 			win.ShowCursor(false)
 			//win.MapWindowPoints(window, nil, win.LPPOINT(&rect), 2)
 			//TimeFunction(proc(){RenderWindow()}, 100)
-			//TimeFunction(proc(){RenderWindow()}, 100)
+			//TimeFunction(proc(){RenderWindow2()}, 100)
+			fmt.println(bitmapWidth, bitmapHeight)
+
+
 			for running {
 				//win.ClipCursor(&screenRect)
 				message: win.MSG
@@ -203,8 +217,7 @@ main :: proc() {
 					win.TranslateMessage(&message)
 					win.DispatchMessageW(&message)
 				}
-				MovePlayer()
-				RenderWindow(true)
+
 
 				deviceContext: win.HDC = win.GetDC(window)
 				clientRect: win.RECT
@@ -214,15 +227,19 @@ main :: proc() {
 				Win32UpdateWindow(deviceContext, &clientRect, 0, 0, windowWidth, windowHeight)
 				win.ReleaseDC(window, deviceContext)
 
+				RenderWindow()
+				MovePlayer()
+
 				if (time.since(secondTimer) >= time.Second){
 					fmt.println("done, took", time.since(currentTime))
-					fmt.println(playerPosition, GetDirectionFromAngle(playerDirectionHorizontal, playerDirectionVertical))
 
 					secondTimer = time.now()
 
 				}
+
 				lastTime = currentTime
 				currentTime = time.now()
+
 			}
 
 		} else {
@@ -318,7 +335,6 @@ Win32MainWindowCallback :: proc "std" (
 
 	case win.WM_LBUTTONUP:
 	case win.WM_LBUTTONDOWN:
-		clear_dynamic_array(&nodes)
 	//win.GET_X_LPARAM(lParam)
 	//win.GET_Y_LPARAM(lParam)
 	case win.WM_MOUSEMOVE:

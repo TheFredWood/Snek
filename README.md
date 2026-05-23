@@ -9,6 +9,7 @@ Features:
 -Optimiere darstellung der Formen (bisher haben Formen ungewollte Rundungen durch die Berechnung der Strahlen)
 -Timing/Benchmarking einrichten für einzelne Funktionen
 ->etwa 21ms pro frame
+-Optimierung durch Bounding Boxen und Culling
 
 Gesplante Features:
 -Optimierung durch Multithreading
