@@ -8,8 +8,8 @@ Features:
 - Rohdaten der Maus werden abgegriffen und der Cursor wird im Fenster eingesperrt
 - Optimiere darstellung der Formen (bisher haben Formen ungewollte Rundungen durch die Berechnung der Strahlen)
 - Timing/Benchmarking einrichten für einzelne Funktionen
-- >etwa 21ms pro frame
-- Optimierung durch Bounding Boxen und Culling
+- Optimierung durch Bounding Boxen und Culling (von average 30ms zu 15ms im Startscreen, von 30ms zu 1ms bei leerem Screen)
+
 
 Gesplante Features:
 - Optimierung durch Multithreading
