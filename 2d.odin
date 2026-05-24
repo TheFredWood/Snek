@@ -21,6 +21,11 @@ Position :: struct {
 	y:		u32,
 }
 
+Block :: struct {
+	start: Position,
+	end: Position
+}
+
 GetScreenPosition :: proc(point: Point, direction: Point, horVec: Point, vertVec: Point, nearPlane: Plane) -> (x: u32, y: u32) {
 	length := DotProduct(direction, GetDistance(playerPosition, point))
 	xPosition := DotProduct(horVec, GetDistance(playerPosition, point)) / length

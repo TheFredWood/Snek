@@ -9,6 +9,7 @@ Features:
 - Optimiere darstellung der Formen (bisher haben Formen ungewollte Rundungen durch die Berechnung der Strahlen)
 - Timing/Benchmarking einrichten für einzelne Funktionen
 - Optimierung durch Bounding Boxen und Frustum Culling (von average 30ms zu 15ms im Startscreen, von 30ms zu 1ms bei leerem Screen)
+- Bounding Boxen werden nun pro Block auf dem Screen statt pro Zeile berechnet (von average 19ms zu 8ms im Startscreen)
 
 
 Gesplante Features:

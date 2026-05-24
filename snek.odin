@@ -90,7 +90,6 @@ MovePlayer :: proc () {
 		direction = {0, 0, -1}
 	}
 	playerPosition = {playerPosition.x +  direction.x * speed * d, playerPosition.y + direction.y * speed * d, playerPosition.z + direction.z * speed * d}
-
 }
 
 RenderWindow :: proc() {
@@ -106,6 +105,21 @@ RenderWindow :: proc() {
 	vertVec = NormalizeVector(vertVec)
 	vertVec = Mult(vertVec, -1)
 	
+	blockSize: u32 = 32
+	blocks: [dynamic]Block
+	for i: u32 = 0; i < u32(math.ceil(f64(windowHeight) / f64(blockSize))); i = i + 1 {
+		for j: u32 = 0; j < u32(math.ceil(f64(windowWidth) / f64(blockSize))); j = j + 1 {
+			endX : u32 = (j + 1) * blockSize
+			endY : u32 = (i + 1) * blockSize
+			if (endY > windowHeight){
+				endY = windowHeight
+			}
+			if (endX > windowWidth){
+				endX = windowWidth
+			}
+			append(&blocks, Block{Position{j * blockSize, i * blockSize}, Position{endX, endY}})
+		}
+	}
 
 	frustum: [6]Plane = CreateFrustum(playerPosition, playerDirection)
 	for &triangle in triangles {
@@ -115,30 +129,38 @@ RenderWindow :: proc() {
 		}
 	}
 
-	for i: u32 = 0; i < windowHeight; i = i + 1 {
-		section := pixels[windowX + (i + windowY) * bitmapWidth:windowX + windowWidth + (i + windowY) * bitmapWidth]
+	for block in blocks {
 		relevantTriangles: [dynamic]Triangle
 		for boundingBox in boundingBoxes {
-			if (boundingBox.lowerBounds.y < i && boundingBox.upperBounds.y > i) {
+			if (boundingBox.lowerBounds.y <= block.end.y &&
+				boundingBox.upperBounds.y >= block.start.y &&
+				boundingBox.lowerBounds.x <= block.end.x &&
+				boundingBox.upperBounds.x >= block.start.x
+				) {
+
 				append(&relevantTriangles, boundingBox.triangle^)
 			}
 		}
-		for j: u32 = 0; j < windowWidth; j = j + 1 {
-			shortestBeam : f64 = -1
-			shortestBeamColor: u32 = 0x00000000
-			for triangle in relevantTriangles {
-				pixelplayerDirection: Point = Add(Add(playerDirection, Mult(horVec, (f64(j) - f64(windowWidth) / 2.0) / 400.0)), Mult(vertVec, (f64(windowHeight) / 2.0 - f64(i)) / 400))
-				beamLength: f64 = CheckCollision(playerPosition, pixelplayerDirection, triangle)
-				if (beamLength > 0 && (beamLength < shortestBeam || shortestBeam < 0)) {
-					shortestBeam = beamLength
-					shortestBeamColor = triangle.color
+		for i: u32 = block.start.y; i < block.end.y; i = i + 1 {
+			section := pixels[windowX + (i + windowY) * bitmapWidth:windowX + windowWidth + (i + windowY) * bitmapWidth]
+			for j: u32 = block.start.x; j < block.end.x; j = j + 1 {
+				shortestBeam : f64 = -1
+				shortestBeamColor: u32 = 0x00000000
+				for triangle in relevantTriangles {
+					pixelplayerDirection: Point = Add(Add(playerDirection, Mult(horVec, (f64(j) - f64(windowWidth) / 2.0) / 400.0)), Mult(vertVec, (f64(windowHeight) / 2.0 - f64(i)) / 400))
+					beamLength: f64 = CheckCollision(playerPosition, pixelplayerDirection, triangle)
+					if (beamLength > 0 && (beamLength < shortestBeam || shortestBeam < 0)) {
+						shortestBeam = beamLength
+						shortestBeamColor = triangle.color
+					}
 				}
-			}
-			if (shortestBeam > 0) {
-				section[j] = shortestBeamColor
-			}
+				if (shortestBeam > 0) {
+					section[j] = shortestBeamColor
+				}
 
+			}
 		}
+
 	}
 }
 
@@ -202,11 +224,11 @@ main :: proc() {
 
 			win.ShowCursor(false)
 			//win.MapWindowPoints(window, nil, win.LPPOINT(&rect), 2)
-			//TimeFunction(proc(){RenderWindow()}, 100)
+			TimeFunction(proc(){RenderWindow()}, 100)
 			//TimeFunction(proc(){RenderWindow2()}, 100)
 			fmt.println(bitmapWidth, bitmapHeight)
 
-
+			i := 0
 			for running {
 				//win.ClipCursor(&screenRect)
 				message: win.MSG
@@ -226,8 +248,11 @@ main :: proc() {
 				windowHeight: i32 = clientRect.bottom - clientRect.top
 				Win32UpdateWindow(deviceContext, &clientRect, 0, 0, windowWidth, windowHeight)
 				win.ReleaseDC(window, deviceContext)
-
-				RenderWindow()
+				if (i % 2 == 1) {
+					//RenderWindow2()
+				} else {
+					RenderWindow()
+				}
 				MovePlayer()
 
 				if (time.since(secondTimer) >= time.Second){
@@ -239,7 +264,7 @@ main :: proc() {
 
 				lastTime = currentTime
 				currentTime = time.now()
-
+				//i = i + 1
 			}
 
 		} else {
