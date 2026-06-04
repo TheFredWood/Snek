@@ -4,10 +4,12 @@ package snek
 import "base:runtime"
 import "core:fmt"
 import "core:math"
+import "core:math/rand"
 import "core:mem"
 import "core:slice"
 import win "core:sys/windows"
 import "core:time"
+import "base:intrinsics"
 
 running: bool
 
@@ -40,10 +42,34 @@ windowY: u32
 windowWidth: u32
 windowHeight: u32
 
+startRenderingEvent: win.HANDLE
+workerDoneCounter: u32
+frameInfo: FrameInfo
+resetThreads: u32 = 0
+
+TimeFunction2 :: proc(func: proc(), repititions: int){
+	for i := 0; i < 50; i = i + 1 {
+		func()
+	}
+	startTime := time.now()
+
+	for i := 0; i < repititions; i = i + 1 {
+		func()
+	}
+
+	endTime := time.now()
+
+	average := time.diff(startTime, endTime) / time.Duration(repititions)
+	fmt.println("time:", time.diff(startTime, endTime), "average:", average)
+}
 TimeFunction :: proc(func: proc(), repititions: int){
+	for i := 0; i < 50; i = i + 1 {
+		func()
+	}
 	startTime := time.now()	
 
 	times := make([dynamic]time.Duration, 0, repititions)
+	defer delete(times)
 	newTime := time.now()
 	oldTime := time.now()
 	for i := 0; i < repititions; i = i + 1 {
@@ -70,45 +96,42 @@ TimeFunction :: proc(func: proc(), repititions: int){
 MovePlayer :: proc () {
 	speed: f64 = 4 //units per second
 	d := time.duration_seconds(time.since(lastTime))
-	direction: Point
+	direction: Point = {0, 0, 0}
 	if (walkingForward) {
-		direction = GetDirectionFromAngle(playerDirectionHorizontal, 0.5 * math.PI)
+		direction = Add(direction, GetDirectionFromAngle(playerDirectionHorizontal, 0.5 * math.PI))
 	}
 	if (walkingBackwards) {
-		direction = GetDirectionFromAngle(playerDirectionHorizontal + math.PI, 0.5 * math.PI)
+		direction = Add(direction, GetDirectionFromAngle(playerDirectionHorizontal + math.PI, 0.5 * math.PI))
 	}
 	if (walkingLeft) {
-		direction = GetDirectionFromAngle(playerDirectionHorizontal + 0.5 * math.PI, 0.5 * math.PI)
+		direction = Add(direction, GetDirectionFromAngle(playerDirectionHorizontal + 0.5 * math.PI, 0.5 * math.PI))
 	}
 	if (walkingRight) {
-		direction = GetDirectionFromAngle(playerDirectionHorizontal - 0.5 * math.PI, 0.5 * math.PI)
+		direction = Add(direction, GetDirectionFromAngle(playerDirectionHorizontal - 0.5 * math.PI, 0.5 * math.PI))
 	}
 	if (flying) {
-		direction = {0, 0, 1}
+		direction = Add(direction, {0, 0, 1})
 	}
 	if (descending) {
-		direction = {0, 0, -1}
+		direction = Add(direction, {0, 0, -1})
+	}
+	if (direction != {0, 0, 0}){
+		direction = NormalizeVector(direction)
 	}
 	playerPosition = {playerPosition.x +  direction.x * speed * d, playerPosition.y + direction.y * speed * d, playerPosition.z + direction.z * speed * d}
 }
 
+
 RenderWindow :: proc() {
-	boundingBoxes: [dynamic]BoundingBox
-	pixels := slice.from_ptr(cast(^u32)bitmapMemory, cast(int)(bitmapHeight * bitmapWidth))
 	windowX, windowY, windowWidth, windowHeight = DrawDynamicAreaCentered(1, 16.0/9.0, 0x00FFFFFF)
 	fovHorizontal = f64(windowWidth) / f64(windowHeight) * f64(fovVertical)
 	playerDirection: Point = GetDirectionFromAngle(playerDirectionHorizontal, playerDirectionVertical)
-	upVec: Point = Point{0, 0, 1}
-	horVec: Point = CrossProduct(playerDirection, upVec)
-	horVec = NormalizeVector(horVec)
-	vertVec := CrossProduct(playerDirection, horVec)
-	vertVec = NormalizeVector(vertVec)
-	vertVec = Mult(vertVec, -1)
 	
-	blockSize: u32 = 32
-	blocks: [dynamic]Block
-	for i: u32 = 0; i < u32(math.ceil(f64(windowHeight) / f64(blockSize))); i = i + 1 {
-		for j: u32 = 0; j < u32(math.ceil(f64(windowWidth) / f64(blockSize))); j = j + 1 {
+	blockSize: u32 = 16
+	blocks := make([dynamic]Block, 0, u32(math.ceil(f64(windowWidth) / f64(blockSize)))* u32(math.ceil(f64(windowHeight) / f64(blockSize))))
+
+	for j: u32 = 0; j < u32(math.ceil(f64(windowWidth) / f64(blockSize))); j = j + 1 {
+		for i: u32 = 0; i < u32(math.ceil(f64(windowHeight) / f64(blockSize))); i = i + 1 {
 			endX : u32 = (j + 1) * blockSize
 			endY : u32 = (i + 1) * blockSize
 			if (endY > windowHeight){
@@ -122,6 +145,8 @@ RenderWindow :: proc() {
 	}
 
 	frustum: [6]Plane = CreateFrustum(playerPosition, playerDirection)
+	boundingBoxes := make([dynamic]BoundingBox, 0, len(triangles))
+	defer delete(boundingBoxes)
 	for &triangle in triangles {
 		isInside, boundingBox := CullTriangleToFrustum(&triangle, frustum)
 		if (isInside){
@@ -129,42 +154,147 @@ RenderWindow :: proc() {
 		}
 	}
 
-	for block in blocks {
-		relevantTriangles: [dynamic]Triangle
-		for boundingBox in boundingBoxes {
-			if (boundingBox.lowerBounds.y <= block.end.y &&
-				boundingBox.upperBounds.y >= block.start.y &&
-				boundingBox.lowerBounds.x <= block.end.x &&
-				boundingBox.upperBounds.x >= block.start.x
-				) {
+	upVec: Point = Point{0, 0, 1}
+	horVec: Point = CrossProduct(playerDirection, upVec)
+	horVec = NormalizeVector(horVec)
+	vertVec := CrossProduct(playerDirection, horVec)
+	vertVec = NormalizeVector(vertVec)
+	vertVec = Mult(vertVec, -1)
 
-				append(&relevantTriangles, boundingBox.triangle^)
+	win.ResetEvent(startRenderingEvent)
+	intrinsics.atomic_thread_fence(.Release)
+	frameInfo.blocks = blocks
+	frameInfo.blockCounter = 0
+	frameInfo.horVec = horVec
+	frameInfo.vertVec = vertVec
+	frameInfo.playerDirection = playerDirection
+	frameInfo.boundingBoxes = boundingBoxes
+
+	sysInfo: win.SYSTEM_INFO
+	win.GetSystemInfo(&sysInfo)
+	workerDoneCounter = sysInfo.dwNumberOfProcessors - 1
+
+
+	for (intrinsics.atomic_load(&resetThreads) < sysInfo.dwNumberOfProcessors - 1){
+		//Wait
+	}
+	resetThreads = 0
+	win.SetEvent(startRenderingEvent)
+
+	for (intrinsics.atomic_load(&workerDoneCounter) > 0){
+		//wait
+		win.Sleep(0)
+	}
+}
+
+ThreadArgs :: struct {
+	ctx: runtime.Context,
+	frameInfo: ^FrameInfo
+}
+
+FrameInfo :: struct {
+	blocks: [dynamic]Block,
+	blockCounter: int,
+	horVec: Point,
+	vertVec: Point,
+	playerDirection: Point,
+	boundingBoxes: [dynamic]BoundingBox,
+}
+
+RenderBlockIfAvailable :: proc "stdcall" (param: win.LPVOID) -> win.DWORD {
+	args := (^ThreadArgs)(param)
+	context = args.ctx
+	intrinsics.atomic_add(&resetThreads, 1)
+	//Wait for Task to arrive with the FrameInfo
+	win.WaitForSingleObject(startRenderingEvent, win.INFINITE)
+	relevantTriangles := make ([dynamic]^Triangle , 0, len(args.frameInfo.boundingBoxes))
+	defer delete(relevantTriangles)
+	for true {
+
+		win.WaitForSingleObject(startRenderingEvent, win.INFINITE)
+		oldValue := intrinsics.atomic_add(&args.frameInfo.blockCounter, 1)
+		if (oldValue < len(args.frameInfo.blocks)){
+			RenderBlock(param, oldValue, &relevantTriangles)
+			clear(&relevantTriangles)
+		} else {
+			intrinsics.atomic_sub(&workerDoneCounter, 1)
+			for (win.WaitForSingleObject(startRenderingEvent, 0) == win.WAIT_OBJECT_0){
+				win.Sleep(0)
+			}
+			intrinsics.atomic_add(&resetThreads, 1)
+		}
+	}
+	return 0
+}
+RenderBlock :: proc (param: win.LPVOID, blockIndex: int, relevantTriangles: ^[dynamic]^Triangle) {
+	args := (^ThreadArgs)(param)
+	block := args.frameInfo.blocks[blockIndex]
+	horVec := args.frameInfo.horVec
+	vertVec := args.frameInfo.vertVec
+	playerDirection := args.frameInfo.playerDirection
+	boundingBoxes := args.frameInfo.boundingBoxes
+
+	//relevantTriangles: [dynamic]Triangle
+	for boundingBox in boundingBoxes {
+		if (boundingBox.lowerBounds.y <= block.end.y &&
+			boundingBox.upperBounds.y >= block.start.y &&
+			boundingBox.lowerBounds.x <= block.end.x &&
+			boundingBox.upperBounds.x >= block.start.x
+			) {
+
+			append(relevantTriangles, boundingBox.triangle)
+		}
+	}
+
+	pixels := slice.from_ptr(cast(^u32)bitmapMemory, cast(int)(bitmapHeight * bitmapWidth))
+	for i: u32 = block.start.y; i < block.end.y; i = i + 1 {
+		section := pixels[windowX + (i + windowY) * bitmapWidth:windowX + windowWidth + (i + windowY) * bitmapWidth]
+		yOffset := Mult(vertVec, (f64(windowHeight) / 2.0 - f64(i)) / 400)
+		yOffsetDirection := Add(playerDirection, yOffset)
+		for j: u32 = block.start.x; j < block.end.x; j = j + 1 {
+			shortestBeam : f64 = -1
+			shortestBeamColor: u32 = 0x00000000
+			xOffset := Mult(horVec, (f64(j) - f64(windowWidth) / 2.0) / 400.0)
+			pixelplayerDirection := Add(yOffsetDirection, xOffset)
+			for triangle in relevantTriangles {
+				beamLength: f64 = CheckCollision(playerPosition, pixelplayerDirection, triangle^)
+				if (beamLength > 0 && (beamLength < shortestBeam || shortestBeam < 0)) {
+					shortestBeam = beamLength
+					shortestBeamColor = triangle.color
+				}
+			}
+			if (shortestBeam > 0) {
+				section[j] = shortestBeamColor
 			}
 		}
-		for i: u32 = block.start.y; i < block.end.y; i = i + 1 {
-			section := pixels[windowX + (i + windowY) * bitmapWidth:windowX + windowWidth + (i + windowY) * bitmapWidth]
-			for j: u32 = block.start.x; j < block.end.x; j = j + 1 {
-				shortestBeam : f64 = -1
-				shortestBeamColor: u32 = 0x00000000
-				for triangle in relevantTriangles {
-					pixelplayerDirection: Point = Add(Add(playerDirection, Mult(horVec, (f64(j) - f64(windowWidth) / 2.0) / 400.0)), Mult(vertVec, (f64(windowHeight) / 2.0 - f64(i)) / 400))
-					beamLength: f64 = CheckCollision(playerPosition, pixelplayerDirection, triangle)
-					if (beamLength > 0 && (beamLength < shortestBeam || shortestBeam < 0)) {
-						shortestBeam = beamLength
-						shortestBeamColor = triangle.color
-					}
-				}
-				if (shortestBeam > 0) {
-					section[j] = shortestBeamColor
-				}
-
-			}
-		}
-
 	}
 }
 
 main :: proc() {
+	sysInfo: win.SYSTEM_INFO
+	win.GetSystemInfo(&sysInfo)
+	threadArgs: ThreadArgs
+	threadArgs.ctx = context
+	threadArgs.frameInfo = &frameInfo
+	startRenderingEvent = win.CreateEventW(nil, true, false, nil)
+	handles := make([dynamic]win.HANDLE, 0, sysInfo.dwNumberOfProcessors)
+	defer delete(handles)
+	for i: u32 = 0; i < sysInfo.dwNumberOfProcessors - 1;i = i + 1 {
+		threadId: win.DWORD
+		threadHandle := win.CreateThread(
+			nil,
+			0,
+			RenderBlockIfAvailable,
+			&threadArgs,
+			0,
+			&threadId,
+		)
+		if (threadHandle == nil) {
+			fmt.println("error with thread")
+		}
+		append(&handles, threadHandle)
+	}
+
 	instance := win.HINSTANCE(win.GetModuleHandleW(nil))
 	//prevInstance is totally useless
 	CommandLine: win.LPCTSTR = win.GetCommandLineW()
@@ -206,6 +336,13 @@ main :: proc() {
 			append(&triangles, floor)
 			append(&triangles, floor2)
 
+			for i := 0; i < 1000; i = i + 1 {
+				p1 := Point{rand.float64_range(-100.0, 100), rand.float64_range(-100.0, 100), rand.float64_range(-100.0, 100)}
+				p2 := Point{rand.float64_range(-100.0, 100), rand.float64_range(-100.0, 100), rand.float64_range(-100.0, 100)}
+				p3 := Point{rand.float64_range(-100.0, 100), rand.float64_range(-100.0, 100), rand.float64_range(-100.0, 100)}
+				append(&triangles, Triangle{p1, p2, p3, rand.uint32()})
+			}
+
 			running = true
 			secondTimer: time.Time = time.now()
 			currentTime: time.Time = time.now()
@@ -224,8 +361,8 @@ main :: proc() {
 
 			win.ShowCursor(false)
 			//win.MapWindowPoints(window, nil, win.LPPOINT(&rect), 2)
-			TimeFunction(proc(){RenderWindow()}, 100)
-			//TimeFunction(proc(){RenderWindow2()}, 100)
+			//TimeFunction2(proc(){RenderWindow()}, 100)
+			//TimeFunction2(proc(){RenderWindow2()}, 100)
 			fmt.println(bitmapWidth, bitmapHeight)
 
 			i := 0
@@ -274,6 +411,11 @@ main :: proc() {
 		//logging
 	}
 
+	//win.WaitForMultipleObjects(win.DWORD(len(handles)), &handles[0],  true, win.INFINITE)
+	for handle in handles {
+		win.WaitForSingleObject(handle, win.INFINITE)
+		win.CloseHandle(handle)
+	}
 }
 
 Win32MainWindowCallback :: proc "std" (
