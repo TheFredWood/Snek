@@ -336,6 +336,7 @@ main :: proc() {
 			append(&triangles, floor)
 			append(&triangles, floor2)
 
+			rand.reset(1)
 			for i := 0; i < 1000; i = i + 1 {
 				p1 := Point{rand.float64_range(-100.0, 100), rand.float64_range(-100.0, 100), rand.float64_range(-100.0, 100)}
 				p2 := Point{rand.float64_range(-100.0, 100), rand.float64_range(-100.0, 100), rand.float64_range(-100.0, 100)}
