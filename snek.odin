@@ -378,20 +378,20 @@ main :: proc() {
 					win.DispatchMessageW(&message)
 				}
 
-
-				deviceContext: win.HDC = win.GetDC(window)
 				clientRect: win.RECT
 				win.GetClientRect(window, &clientRect)
 				windowWidth: i32 = clientRect.right - clientRect.left
 				windowHeight: i32 = clientRect.bottom - clientRect.top
-				Win32UpdateWindow(deviceContext, &clientRect, 0, 0, windowWidth, windowHeight)
-				win.ReleaseDC(window, deviceContext)
+				MovePlayer()
 				if (i % 2 == 1) {
 					//RenderWindow2()
 				} else {
 					RenderWindow()
 				}
-				MovePlayer()
+
+				deviceContext: win.HDC = win.GetDC(window)
+				Win32UpdateWindow(deviceContext, &clientRect, 0, 0, windowWidth, windowHeight)
+				win.ReleaseDC(window, deviceContext)
 
 				if (time.since(secondTimer) >= time.Second){
 					fmt.println("done, took", time.since(currentTime))
@@ -458,7 +458,6 @@ Win32MainWindowCallback :: proc "std" (
 		running = false
 	case win.WM_PAINT:
 		paint: win.PAINTSTRUCT
-		deviceContext: win.HDC = win.BeginPaint(window, &paint)
 		x := paint.rcPaint.left
 		y := paint.rcPaint.top
 		width := paint.rcPaint.right - paint.rcPaint.left
@@ -467,6 +466,7 @@ Win32MainWindowCallback :: proc "std" (
 		clientRect: win.RECT
 		win.GetClientRect(window, &clientRect)
 
+		deviceContext: win.HDC = win.BeginPaint(window, &paint)
 		Win32UpdateWindow(deviceContext, &clientRect, x, y, width, height)
 		win.EndPaint(window, &paint)
 	case win.WM_KEYDOWN:
