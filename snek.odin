@@ -10,6 +10,7 @@ import "core:slice"
 import win "core:sys/windows"
 import "core:time"
 import "base:intrinsics"
+import "core:simd"
 
 running: bool
 
@@ -23,6 +24,8 @@ descending: bool = false
 lastTime: time.Time = time.now()
 shapeFinished: bool
 triangles: [dynamic]Triangle 
+//triangles: TriangleSoA 
+
 bitmapHandle: win.HBITMAP
 bitmapInfo: win.BITMAPINFO
 bitmapDeviceContext: win.HDC
@@ -51,6 +54,7 @@ TimeFunction2 :: proc(func: proc(), repititions: int){
 	for i := 0; i < 50; i = i + 1 {
 		func()
 	}
+
 	startTime := time.now()
 
 	for i := 0; i < repititions; i = i + 1 {
@@ -62,6 +66,7 @@ TimeFunction2 :: proc(func: proc(), repititions: int){
 	average := time.diff(startTime, endTime) / time.Duration(repititions)
 	fmt.println("time:", time.diff(startTime, endTime), "average:", average)
 }
+
 TimeFunction :: proc(func: proc(), repititions: int){
 	for i := 0; i < 50; i = i + 1 {
 		func()
@@ -121,7 +126,6 @@ MovePlayer :: proc () {
 	playerPosition = {playerPosition.x +  direction.x * speed * d, playerPosition.y + direction.y * speed * d, playerPosition.z + direction.z * speed * d}
 }
 
-
 RenderWindow :: proc() {
 	windowX, windowY, windowWidth, windowHeight = DrawDynamicAreaCentered(1, 16.0/9.0, 0x00FFFFFF)
 	fovHorizontal = f64(windowWidth) / f64(windowHeight) * f64(fovVertical)
@@ -148,6 +152,8 @@ RenderWindow :: proc() {
 	boundingBoxes := make([dynamic]BoundingBox, 0, len(triangles))
 	defer delete(boundingBoxes)
 	for &triangle in triangles {
+	//for i := 0; i < len(triangles.point1.x); i = i + 1 {
+		//triangle := GetTriangleFromSoA(&triangles, i)
 		isInside, boundingBox := CullTriangleToFrustum(&triangle, frustum)
 		if (isInside){
 			append(&boundingBoxes, boundingBox)
@@ -207,14 +213,14 @@ RenderBlockIfAvailable :: proc "stdcall" (param: win.LPVOID) -> win.DWORD {
 	intrinsics.atomic_add(&resetThreads, 1)
 	//Wait for Task to arrive with the FrameInfo
 	win.WaitForSingleObject(startRenderingEvent, win.INFINITE)
-	relevantTriangles := make ([dynamic]^Triangle , 0, len(args.frameInfo.boundingBoxes))
+	relevantTriangles := make ([dynamic]Triangle , 0, len(args.frameInfo.boundingBoxes))
 	defer delete(relevantTriangles)
 	for true {
 
 		win.WaitForSingleObject(startRenderingEvent, win.INFINITE)
 		oldValue := intrinsics.atomic_add(&args.frameInfo.blockCounter, 1)
 		if (oldValue < len(args.frameInfo.blocks)){
-			RenderBlock(param, oldValue, &relevantTriangles)
+			RenderBlock2(param, oldValue, &relevantTriangles)
 			clear(&relevantTriangles)
 		} else {
 			intrinsics.atomic_sub(&workerDoneCounter, 1)
@@ -226,7 +232,8 @@ RenderBlockIfAvailable :: proc "stdcall" (param: win.LPVOID) -> win.DWORD {
 	}
 	return 0
 }
-RenderBlock :: proc (param: win.LPVOID, blockIndex: int, relevantTriangles: ^[dynamic]^Triangle) {
+
+RenderBlock :: proc (param: win.LPVOID, blockIndex: int, relevantTriangles: ^[dynamic]Triangle) {
 	args := (^ThreadArgs)(param)
 	block := args.frameInfo.blocks[blockIndex]
 	horVec := args.frameInfo.horVec
@@ -242,7 +249,7 @@ RenderBlock :: proc (param: win.LPVOID, blockIndex: int, relevantTriangles: ^[dy
 			boundingBox.upperBounds.x >= block.start.x
 			) {
 
-			append(relevantTriangles, boundingBox.triangle)
+			append(relevantTriangles, boundingBox.triangle^)
 		}
 	}
 
@@ -255,19 +262,188 @@ RenderBlock :: proc (param: win.LPVOID, blockIndex: int, relevantTriangles: ^[dy
 			shortestBeam : f64 = -1
 			shortestBeamColor: u32 = 0x00000000
 			xOffset := Mult(horVec, (f64(j) - f64(windowWidth) / 2.0) / 400.0)
-			pixelplayerDirection := Add(yOffsetDirection, xOffset)
+			pixelPlayerDirection := Add(yOffsetDirection, xOffset)
 			for triangle in relevantTriangles {
-				beamLength: f64 = CheckCollision(playerPosition, pixelplayerDirection, triangle^)
+				startTime := time.now()	
+				beamLength: f64 = CheckCollision(playerPosition, pixelPlayerDirection, triangle)
 				if (beamLength > 0 && (beamLength < shortestBeam || shortestBeam < 0)) {
 					shortestBeam = beamLength
 					shortestBeamColor = triangle.color
 				}
+				fmt.println("Tme taken:", time.since(startTime))
 			}
 			if (shortestBeam > 0) {
 				section[j] = shortestBeamColor
 			}
 		}
 	}
+}
+
+RenderBlock2 :: proc (param: win.LPVOID, blockIndex: int, relevantTriangles: ^[dynamic]Triangle) {
+	args := (^ThreadArgs)(param)
+	block := args.frameInfo.blocks[blockIndex]
+	horVec := args.frameInfo.horVec
+	vertVec := args.frameInfo.vertVec
+	playerDirection := args.frameInfo.playerDirection
+	boundingBoxes := args.frameInfo.boundingBoxes
+
+	//relevantTriangles: [dynamic]Triangle
+	for boundingBox in boundingBoxes {
+		if (boundingBox.lowerBounds.y <= block.end.y &&
+			boundingBox.upperBounds.y >= block.start.y &&
+			boundingBox.lowerBounds.x <= block.end.x &&
+			boundingBox.upperBounds.x >= block.start.x
+			) {
+
+			append(relevantTriangles, boundingBox.triangle^)
+		}
+	}
+
+	s: S
+	pixels := slice.from_ptr(cast(^u32)bitmapMemory, cast(int)(bitmapHeight * bitmapWidth))
+	for i: u32 = block.start.y; i < block.end.y; i = i + 1 {
+		section := pixels[windowX + (i + windowY) * bitmapWidth:windowX + windowWidth + (i + windowY) * bitmapWidth]
+		yOffset := Mult(vertVec, (f64(windowHeight) / 2.0 - f64(i)) / 400)
+		yOffsetDirection := Add(playerDirection, yOffset)
+		for j: u32 = block.start.x; j < block.end.x; j = j + 1 {
+			shortestBeam : f64 = -1
+			shortestBeamColor: u32 = 0x00000090
+			xOffset := Mult(horVec, (f64(j) - f64(windowWidth) / 2.0) / 400.0)
+			pixelPlayerDirection := Add(yOffsetDirection, xOffset)
+			k: uint
+
+			for k = 0; k + 4 <= len(relevantTriangles); k = k + 4 {
+				s.ppx = transmute(simd.f64x4)[4]f64{
+					playerPosition.x,
+					playerPosition.x,
+					playerPosition.x,
+					playerPosition.x
+
+				}
+				s.ppy = transmute(simd.f64x4)[4]f64{
+					playerPosition.y,
+					playerPosition.y,
+					playerPosition.y,
+					playerPosition.y
+
+				}
+				s.ppz = transmute(simd.f64x4)[4]f64{
+					playerPosition.z,
+					playerPosition.z,
+					playerPosition.z,
+					playerPosition.z
+
+				}
+
+				s.pppx = transmute(simd.f64x4)[4]f64{
+					pixelPlayerDirection.x,
+					pixelPlayerDirection.x,
+					pixelPlayerDirection.x,
+					pixelPlayerDirection.x
+
+				}
+				s.pppy = transmute(simd.f64x4)[4]f64{
+					pixelPlayerDirection.y,
+					pixelPlayerDirection.y,
+					pixelPlayerDirection.y,
+					pixelPlayerDirection.y
+
+				}
+				s.pppz = transmute(simd.f64x4)[4]f64{
+					pixelPlayerDirection.z,
+					pixelPlayerDirection.z,
+					pixelPlayerDirection.z,
+					pixelPlayerDirection.z
+
+				}
+
+				s.tx1 = transmute(simd.f64x4){
+					relevantTriangles[k].point1.x,
+					relevantTriangles[k + 1].point1.x,
+					relevantTriangles[k + 2].point1.x,
+					relevantTriangles[k + 3].point1.x,
+				}
+				s.ty1 = transmute(simd.f64x4){
+					relevantTriangles[k].point1.y,
+					relevantTriangles[k + 1].point1.y,
+					relevantTriangles[k + 2].point1.y,
+					relevantTriangles[k + 3].point1.y,
+				}
+				s.tz1 = transmute(simd.f64x4){
+					relevantTriangles[k].point1.z,
+					relevantTriangles[k + 1].point1.z,
+					relevantTriangles[k + 2].point1.z,
+					relevantTriangles[k + 3].point1.z,
+				}
+
+				s.tx2 = transmute(simd.f64x4){
+					relevantTriangles[k].point2.x,
+					relevantTriangles[k + 1].point2.x,
+					relevantTriangles[k + 2].point2.x,
+					relevantTriangles[k + 3].point2.x,
+				}
+				s.ty2 = transmute(simd.f64x4){
+					relevantTriangles[k].point2.y,
+					relevantTriangles[k + 1].point2.y,
+					relevantTriangles[k + 2].point2.y,
+					relevantTriangles[k + 3].point2.y,
+				}
+				s.tz2 = transmute(simd.f64x4){
+					relevantTriangles[k].point2.z,
+					relevantTriangles[k + 1].point2.z,
+					relevantTriangles[k + 2].point2.z,
+					relevantTriangles[k + 3].point2.z,
+				}
+
+				s.tx3 = transmute(simd.f64x4){
+					relevantTriangles[k].point3.x,
+					relevantTriangles[k + 1].point3.x,
+					relevantTriangles[k + 2].point3.x,
+					relevantTriangles[k + 3].point3.x,
+				}
+				s.ty3 = transmute(simd.f64x4){
+					relevantTriangles[k].point3.y,
+					relevantTriangles[k + 1].point3.y,
+					relevantTriangles[k + 2].point3.y,
+					relevantTriangles[k + 3].point3.y,
+				}
+				s.tz3 = transmute(simd.f64x4){
+					relevantTriangles[k].point3.z,
+					relevantTriangles[k + 1].point3.z,
+					relevantTriangles[k + 2].point3.z,
+					relevantTriangles[k + 3].point3.z,
+				}
+
+				s.tc = transmute(simd.u32x4){
+					relevantTriangles[k].color,
+					relevantTriangles[k + 1].color,
+					relevantTriangles[k + 2].color,
+					relevantTriangles[k + 3].color
+				}
+
+				//startTime := time.now()	
+				beamLength, mask := CheckCollisionSIMD(s)
+				shortestBeam, shortestBeamColor = CompareBeams(transmute([4]f64)beamLength, transmute([4]u32)s.tc, transmute([4]u64)mask, shortestBeam, shortestBeamColor)
+				//fmt.println("Tme taken:", time.since(startTime))
+			}
+
+			for ; k < len(relevantTriangles); k = k + 1 {
+				beamLength: f64 = CheckCollision(playerPosition, pixelPlayerDirection, relevantTriangles[k])
+				shortestBeam, shortestBeamColor = CompareBeamsSingle(beamLength, relevantTriangles[k].color, shortestBeam, shortestBeamColor)
+			}
+			section[j] = shortestBeamColor
+		}
+	}
+}
+
+S :: struct {
+	ppx, ppy, ppz: #simd[4]f64, //playerPosition
+	pppx, pppy, pppz: #simd[4]f64, //pixelPlayerDirection
+	tx1, ty1, tz1: #simd[4]f64, //triangle point1
+	tx2, ty2, tz2: #simd[4]f64, //triangle point2
+	tx3, ty3, tz3: #simd[4]f64, //triangle point3
+	tc: #simd[4]u32, //triangle color
+
 }
 
 main :: proc() {
@@ -335,6 +511,12 @@ main :: proc() {
 			append(&triangles, triangle4)
 			append(&triangles, floor)
 			append(&triangles, floor2)
+			// AppendTriangleSoA(&triangles, triangle)
+			// AppendTriangleSoA(&triangles, triangle2)
+			// AppendTriangleSoA(&triangles, triangle3)
+			// AppendTriangleSoA(&triangles, triangle4)
+			// AppendTriangleSoA(&triangles, floor)
+			// AppendTriangleSoA(&triangles, floor2)
 
 			rand.reset(1)
 			for i := 0; i < 1000; i = i + 1 {
@@ -342,6 +524,7 @@ main :: proc() {
 				p2 := Point{rand.float64_range(-100.0, 100), rand.float64_range(-100.0, 100), rand.float64_range(-100.0, 100)}
 				p3 := Point{rand.float64_range(-100.0, 100), rand.float64_range(-100.0, 100), rand.float64_range(-100.0, 100)}
 				append(&triangles, Triangle{p1, p2, p3, rand.uint32()})
+				// AppendTriangleSoA(&triangles, Triangle{p1, p2, p3, rand.uint32()})
 			}
 
 			running = true
