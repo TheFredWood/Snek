@@ -3,8 +3,7 @@ package snek
 import "core:math"
 import "core:simd"
 
-Point :: struct {
-	x:		f64,
+Point :: struct { x:		f64,
 	y:		f64,
 	z:		f64 // Height
 }
@@ -46,6 +45,7 @@ AppendTriangleSoA :: proc(triangles: ^TriangleSoA, triangle: Triangle) {
 	append(&triangles.point3.z, triangle.point3.z)
 	append(&triangles.color, triangle.color)
 }
+
 GetTriangleFromSoA :: proc(triangles: ^TriangleSoA, index: int) -> Triangle{
 	t := triangles
 	return Triangle{
@@ -54,6 +54,45 @@ GetTriangleFromSoA :: proc(triangles: ^TriangleSoA, index: int) -> Triangle{
 		Point{t.point3.x[index], t.point3.y[index], t.point3.z[index]},
 		t.color[index]
 	}
+}
+
+ReserveTriangleSoA :: proc(triangles: ^TriangleSoA, capacity: int) {
+	reserve(&triangles.point1.x, capacity)
+	reserve(&triangles.point1.y, capacity)
+	reserve(&triangles.point1.z, capacity)
+	reserve(&triangles.point2.x, capacity)
+	reserve(&triangles.point2.y, capacity)
+	reserve(&triangles.point2.z, capacity)
+	reserve(&triangles.point3.x, capacity)
+	reserve(&triangles.point3.y, capacity)
+	reserve(&triangles.point3.z, capacity)
+	reserve(&triangles.color, capacity)
+}
+
+ClearTriangleSoA :: proc(triangles: ^TriangleSoA) {
+	clear(&triangles.point1.x)
+	clear(&triangles.point1.y)
+	clear(&triangles.point1.z)
+	clear(&triangles.point2.x)
+	clear(&triangles.point2.y)
+	clear(&triangles.point2.z)
+	clear(&triangles.point3.x)
+	clear(&triangles.point3.y)
+	clear(&triangles.point3.z)
+	clear(&triangles.color)
+}
+
+DeleteTriangleSoA :: proc(triangles: ^TriangleSoA) {
+	delete(triangles.point1.x)
+	delete(triangles.point1.y)
+	delete(triangles.point1.z)
+	delete(triangles.point2.x)
+	delete(triangles.point2.y)
+	delete(triangles.point2.z)
+	delete(triangles.point3.x)
+	delete(triangles.point3.y)
+	delete(triangles.point3.z)
+	delete(triangles.color)
 }
 
 CrossProduct :: proc(v1: Point, v2: Point) -> Point {	// 9 MathOps
@@ -171,14 +210,18 @@ CheckCollisionSIMD :: proc(s: S) -> (simd.f64x4, simd.u64x4) { // 47 MathOps
 	mask2 := simd.lanes_lt(det, -0.00001)
 	//mask is 1 if result valid
 	mask: #simd[4]u64 = simd.bit_or(mask1, mask2)
+	if simd.reduce_or(mask) == 0 {
+	    return simd.f64x4(0.0), mask
+	}
 
 	//tvec := GetDistance(triangle.point1, start)
 	tvecx: #simd[4]f64 = simd.sub(s.ppx, s.tx1)
 	tvecy: #simd[4]f64 = simd.sub(s.ppy, s.ty1)
 	tvecz: #simd[4]f64 = simd.sub(s.ppz, s.tz1)
 	
+	invDet := simd.div(simd.f64x4(1.0), det)
 	//length1 := DotProduct(tvec, pvec) / det
-	length1 := simd.div(DotProductSIMD(tvecx, tvecy, tvecz, pvecx, pvecy, pvecz), det)
+	length1 := simd.mul(DotProductSIMD(tvecx, tvecy, tvecz, pvecx, pvecy, pvecz), invDet)
 
 	/*
 	if (length1 < 0.0 || length1 > 1.0) {
@@ -189,11 +232,14 @@ CheckCollisionSIMD :: proc(s: S) -> (simd.f64x4, simd.u64x4) { // 47 MathOps
 	mask2 = simd.lanes_le(length1, 1.0)
 	masks := simd.bit_and(mask1, mask2)
 	mask = simd.bit_and(mask, masks)
+	if simd.reduce_or(mask) == 0 {
+	    return simd.f64x4(0.0), mask
+	}
 
 	//qvec := CrossProduct(tvec, v1)
 	qvecx, qvecy, qvecz := CrossProductSIMD(tvecx, tvecy, tvecz, v1x, v1y, v1z)
 	//length2 := DotProduct(direction, qvec) / det
-	length2 := simd.div(DotProductSIMD(s.pppx, s.pppy, s.pppz, qvecx, qvecy, qvecz), det)
+	length2 := simd.mul(DotProductSIMD(s.pppx, s.pppy, s.pppz, qvecx, qvecy, qvecz), invDet)
 
 	/*
 	if (length2 < 0.0 || length1 + length2 > 1.0){
@@ -205,9 +251,12 @@ CheckCollisionSIMD :: proc(s: S) -> (simd.f64x4, simd.u64x4) { // 47 MathOps
 	
 	masks = simd.bit_and(mask1, mask2)
 	mask = simd.bit_and(mask, masks)
+	if simd.reduce_or(mask) == 0 {
+	    return simd.f64x4(0.0), mask
+	}
 
 	//lengthBeam := DotProduct(v2, qvec) / det
-	lengthBeam := simd.div(DotProductSIMD(v2x, v2y, v2z, qvecx, qvecy, qvecz), det)
+	lengthBeam := simd.mul(DotProductSIMD(v2x, v2y, v2z, qvecx, qvecy, qvecz), invDet)
 	mask1 = simd.lanes_ge(lengthBeam, 0.0)
 	mask = simd.bit_and(mask, mask1)
 	return lengthBeam, mask
