@@ -8,10 +8,10 @@ Point :: struct { x:		f64,
 	z:		f64 // Height
 }
 
-PointSoA :: struct {
-	x:		[dynamic]f64,
-	y:		[dynamic]f64,
-	z:		[dynamic]f64 // Height
+PointSoA4 :: struct {
+	x:		[4]f64,
+	y:		[4]f64,
+	z:		[4]f64 // Height
 }
 
 Triangle :: struct {
@@ -21,11 +21,11 @@ Triangle :: struct {
 	color:		u32
 }
 
-TriangleSoA :: struct {
-	point1:		PointSoA,
-	point2:		PointSoA,
-	point3:		PointSoA,
-	color:		[dynamic]u32
+TriangleSoA4 :: struct {
+	point1:		PointSoA4,
+	point2:		PointSoA4,
+	point3:		PointSoA4,
+	color:		[4]u32
 }
 
 Plane :: struct {
@@ -33,66 +33,56 @@ Plane :: struct {
 	normalVector: Point
 }
 
-AppendTriangleSoA :: proc(triangles: ^TriangleSoA, triangle: Triangle) {
-	append(&triangles.point1.x, triangle.point1.x)
-	append(&triangles.point1.y, triangle.point1.y)
-	append(&triangles.point1.z, triangle.point1.z)
-	append(&triangles.point2.x, triangle.point2.x)
-	append(&triangles.point2.y, triangle.point2.y)
-	append(&triangles.point2.z, triangle.point2.z)
-	append(&triangles.point3.x, triangle.point3.x)
-	append(&triangles.point3.y, triangle.point3.y)
-	append(&triangles.point3.z, triangle.point3.z)
-	append(&triangles.color, triangle.color)
-}
-
-GetTriangleFromSoA :: proc(triangles: ^TriangleSoA, index: int) -> Triangle{
-	t := triangles
-	return Triangle{
-		Point{t.point1.x[index], t.point1.y[index], t.point1.z[index]},
-		Point{t.point2.x[index], t.point2.y[index], t.point2.z[index]},
-		Point{t.point3.x[index], t.point3.y[index], t.point3.z[index]},
-		t.color[index]
+MakeTriangleSoA4 :: proc(t1: ^Triangle, t2: ^Triangle, t3: ^Triangle, t4: ^Triangle) -> TriangleSoA4 {
+	return TriangleSoA4{
+		PointSoA4{
+			{t1.point1.x, t2.point1.x, t3.point1.x, t4.point1.x},
+			{t1.point1.y, t2.point1.y, t3.point1.y, t4.point1.y},
+			{t1.point1.z, t2.point1.z, t3.point1.z, t4.point1.z},
+		},
+		PointSoA4{
+			{t1.point2.x, t2.point2.x, t3.point2.x, t4.point2.x},
+			{t1.point2.y, t2.point2.y, t3.point2.y, t4.point2.y},
+			{t1.point2.z, t2.point2.z, t3.point2.z, t4.point2.z},
+		},
+		PointSoA4{
+			{t1.point3.x, t2.point3.x, t3.point3.x, t4.point3.x},
+			{t1.point3.y, t2.point3.y, t3.point3.y, t4.point3.y},
+			{t1.point3.z, t2.point3.z, t3.point3.z, t4.point3.z},
+		},
+		{t1.color, t2.color, t3.color, t4.color}
 	}
 }
 
-ReserveTriangleSoA :: proc(triangles: ^TriangleSoA, capacity: int) {
-	reserve(&triangles.point1.x, capacity)
-	reserve(&triangles.point1.y, capacity)
-	reserve(&triangles.point1.z, capacity)
-	reserve(&triangles.point2.x, capacity)
-	reserve(&triangles.point2.y, capacity)
-	reserve(&triangles.point2.z, capacity)
-	reserve(&triangles.point3.x, capacity)
-	reserve(&triangles.point3.y, capacity)
-	reserve(&triangles.point3.z, capacity)
-	reserve(&triangles.color, capacity)
-}
 
-ClearTriangleSoA :: proc(triangles: ^TriangleSoA) {
-	clear(&triangles.point1.x)
-	clear(&triangles.point1.y)
-	clear(&triangles.point1.z)
-	clear(&triangles.point2.x)
-	clear(&triangles.point2.y)
-	clear(&triangles.point2.z)
-	clear(&triangles.point3.x)
-	clear(&triangles.point3.y)
-	clear(&triangles.point3.z)
-	clear(&triangles.color)
-}
-
-DeleteTriangleSoA :: proc(triangles: ^TriangleSoA) {
-	delete(triangles.point1.x)
-	delete(triangles.point1.y)
-	delete(triangles.point1.z)
-	delete(triangles.point2.x)
-	delete(triangles.point2.y)
-	delete(triangles.point2.z)
-	delete(triangles.point3.x)
-	delete(triangles.point3.y)
-	delete(triangles.point3.z)
-	delete(triangles.color)
+GetTrianglesFromSoA4 :: proc(triangles: ^TriangleSoA4) -> [4]Triangle{
+	t := triangles
+	return {
+			Triangle{
+				Point{t.point1.x[0], t.point1.y[0], t.point1.z[0]},
+				Point{t.point2.x[0], t.point2.y[0], t.point2.z[0]},
+				Point{t.point3.x[0], t.point3.y[0], t.point3.z[0]},
+				t.color[0]
+			},
+			Triangle{
+				Point{t.point1.x[1], t.point1.y[1], t.point1.z[1]},
+				Point{t.point2.x[1], t.point2.y[1], t.point2.z[1]},
+				Point{t.point3.x[1], t.point3.y[1], t.point3.z[1]},
+				t.color[1]
+			},
+			Triangle{
+				Point{t.point1.x[2], t.point1.y[2], t.point1.z[2]},
+				Point{t.point2.x[2], t.point2.y[2], t.point2.z[2]},
+				Point{t.point3.x[2], t.point3.y[2], t.point3.z[2]},
+				t.color[2]
+			},
+			Triangle{
+				Point{t.point1.x[3], t.point1.y[3], t.point1.z[3]},
+				Point{t.point2.x[3], t.point2.y[3], t.point2.z[3]},
+				Point{t.point3.x[3], t.point3.y[3], t.point3.z[3]},
+				t.color[3]
+			}
+		}
 }
 
 CrossProduct :: proc(v1: Point, v2: Point) -> Point {	// 9 MathOps
@@ -128,17 +118,6 @@ Length :: proc(point:Point) -> f64 {
 	return math.sqrt(point.x * point.x + point.y * point.y + point.z * point.z)
 }
 
-
-SplitShapeToTriangles :: proc(shape: [dynamic]Node) {
-	for i := 0; i < len(nodes); i = i + 1 {
-		firstPoint := nodes[i]
-		midPoint := nodes[i + 1]
-
-		
-	}
-	//TODO: Implement
-}
-
 CheckCollision :: proc(start: Point, direction: Point, triangle: Triangle) -> f64{ // 47 MathOps
 	v1 := GetDistance(triangle.point1, triangle.point2)
 	v2 := GetDistance(triangle.point1, triangle.point3)
@@ -165,70 +144,45 @@ CheckCollision :: proc(start: Point, direction: Point, triangle: Triangle) -> f6
 	return lengthBeam
 }
 
-CrossProductSIMD :: proc(x1: simd.f64x4, y1: simd.f64x4, z1: simd.f64x4, x2: simd.f64x4, y2: simd.f64x4, z2: simd.f64x4) -> (simd.f64x4, simd.f64x4, simd.f64x4) {
-	/*
-	return Point{
-		v1.y * v2.z - v1.z * v2.y,
-		v1.z * v2.x - v1.x * v2.z,
-		v1.x * v2.y - v1.y * v2.x
-	}
-	*/
+CrossProductSIMD :: #force_inline proc(x1: simd.f64x4, y1: simd.f64x4, z1: simd.f64x4, x2: simd.f64x4, y2: simd.f64x4, z2: simd.f64x4) -> (simd.f64x4, simd.f64x4, simd.f64x4) {
 	return 	simd.sub(simd.mul(y1, z2), simd.mul(z1, y2)),
 		simd.sub(simd.mul(z1, x2), simd.mul(x1, z2)),
 		simd.sub(simd.mul(x1, y2), simd.mul(y1, x2))
 }
 
-DotProductSIMD :: proc(x1: simd.f64x4, y1: simd.f64x4, z1: simd.f64x4, x2: simd.f64x4, y2: simd.f64x4, z2: simd.f64x4) -> simd.f64x4 {
+DotProductSIMD :: #force_inline proc(x1: simd.f64x4, y1: simd.f64x4, z1: simd.f64x4, x2: simd.f64x4, y2: simd.f64x4, z2: simd.f64x4) -> simd.f64x4 {
 	return 	simd.add(simd.add(simd.mul(x1, x2), simd.mul(y1, y2)), simd.mul(z1, z2))
 }
 
-CheckCollisionSIMD :: proc(s: S) -> (simd.f64x4, simd.u64x4) { // 47 MathOps
-	//start := Point{s.ppx[0], s.ppy[0], s.ppz[0]}
-	//direction := Point{s.pppx[0], s.pppy[0], s.pppz[0]}
-	//triangle := Triangle{Point{s.tx1[0], s.ty1[0], s.tz1[0]}, Point{s.tx2[0], s.ty2[0], s.tz2[0]}, Point{s.tx3[0], s.ty3[0], s.tz3[0]}, s.tc[0]}
-	//v1 := GetDistance(triangle.point1, triangle.point2)
+CheckCollisionSIMD :: #force_inline proc(s: S) -> (simd.f64x4, simd.u64x4) { // 47 MathOps
 	v1x: #simd[4]f64 = simd.sub(s.tx2, s.tx1)
 	v1y: #simd[4]f64 = simd.sub(s.ty2, s.ty1)
 	v1z: #simd[4]f64 = simd.sub(s.tz2, s.tz1)
 
-	//v2 := GetDistance(triangle.point1, triangle.point3)
+
 	v2x: #simd[4]f64 = simd.sub(s.tx3, s.tx1)
 	v2y: #simd[4]f64 = simd.sub(s.ty3, s.ty1)
 	v2z: #simd[4]f64 = simd.sub(s.tz3, s.tz1)
-	//zwei Variablen eliminieren, indem das skalarprodukt mit einem mit v2 und d orthogonalen Vektoren genommen wird, wodurch die Terme wefallen
-	//pvec := CrossProduct(direction, v2)
 	pvecx, pvecy, pvecz := CrossProductSIMD(s.pppx, s.pppy, s.pppz, v2x, v2y, v2z)
 
-	//det := DotProduct(pvec, v1)
 	det := DotProductSIMD(pvecx, pvecy, pvecz, v1x, v1y,v1z)
-	/*
-	if (det < 0.00001 && det > -0.00001){ //direction parallel zur Ebene
-		return -1, 0
-	}
-	*/
 	mask1 := simd.lanes_gt(det, 0.00001)
 	mask2 := simd.lanes_lt(det, -0.00001)
+
 	//mask is 1 if result valid
 	mask: #simd[4]u64 = simd.bit_or(mask1, mask2)
 	if simd.reduce_or(mask) == 0 {
 	    return simd.f64x4(0.0), mask
 	}
 
-	//tvec := GetDistance(triangle.point1, start)
 	tvecx: #simd[4]f64 = simd.sub(s.ppx, s.tx1)
 	tvecy: #simd[4]f64 = simd.sub(s.ppy, s.ty1)
 	tvecz: #simd[4]f64 = simd.sub(s.ppz, s.tz1)
 	
 	invDet := simd.div(simd.f64x4(1.0), det)
-	//length1 := DotProduct(tvec, pvec) / det
 	length1 := simd.mul(DotProductSIMD(tvecx, tvecy, tvecz, pvecx, pvecy, pvecz), invDet)
 
-	/*
-	if (length1 < 0.0 || length1 > 1.0) {
-		return -1, 0
-	}
-	*/
-	mask1 = simd.lanes_ge(length1, 0.0)
+	mask1 = simd.lanes_gt(length1, 0.0)
 	mask2 = simd.lanes_le(length1, 1.0)
 	masks := simd.bit_and(mask1, mask2)
 	mask = simd.bit_and(mask, masks)
@@ -236,17 +190,10 @@ CheckCollisionSIMD :: proc(s: S) -> (simd.f64x4, simd.u64x4) { // 47 MathOps
 	    return simd.f64x4(0.0), mask
 	}
 
-	//qvec := CrossProduct(tvec, v1)
 	qvecx, qvecy, qvecz := CrossProductSIMD(tvecx, tvecy, tvecz, v1x, v1y, v1z)
-	//length2 := DotProduct(direction, qvec) / det
 	length2 := simd.mul(DotProductSIMD(s.pppx, s.pppy, s.pppz, qvecx, qvecy, qvecz), invDet)
 
-	/*
-	if (length2 < 0.0 || length1 + length2 > 1.0){
-		return -1, 0
-	}
-	*/
-	mask1 = simd.lanes_ge(length2, 0.0)
+	mask1 = simd.lanes_gt(length2, 0.0)
 	mask2 = simd.lanes_le(simd.add(length1, length2), 1.0)
 	
 	masks = simd.bit_and(mask1, mask2)
@@ -255,7 +202,6 @@ CheckCollisionSIMD :: proc(s: S) -> (simd.f64x4, simd.u64x4) { // 47 MathOps
 	    return simd.f64x4(0.0), mask
 	}
 
-	//lengthBeam := DotProduct(v2, qvec) / det
 	lengthBeam := simd.mul(DotProductSIMD(v2x, v2y, v2z, qvecx, qvecy, qvecz), invDet)
 	mask1 = simd.lanes_ge(lengthBeam, 0.0)
 	mask = simd.bit_and(mask, mask1)
@@ -318,7 +264,6 @@ CreateFrustum :: proc(start: Point, direction: Point) -> [6]Plane{
 	vertVec = NormalizeVector(vertVec)
 	vertVec = Mult(vertVec, -1)
 
-	//pixelDirection: Point = Add(Add(direction, Mult(horVec, (f64(j) - f64(windowWidth) / 2.0) / 400.0)), Mult(vertVec, (f64(i) - f64(windowHeight) / 2.0) / 400))
 	leftOffset: Point = Mult(horVec, (- f64(windowWidth) / 2.0) / 400.0)
 	upOffset: Point = Mult(vertVec, (f64(windowHeight) / 2.0) / 400.0)
 	nearPlane: Plane = Plane{Add(start, Mult(direction, 0.01)), NormalizeVector(Mult(direction, -1))}
