@@ -11,9 +11,9 @@ Features:
 - Optimierung durch Bounding Boxen und Frustum Culling (von average 30ms zu 15ms im Startscreen, von 30ms zu 1ms bei leerem Screen)
 - Bounding Boxen werden nun pro Block auf dem Screen statt pro Zeile berechnet (von average 19ms zu 8ms im Startscreen)
 - Optimierung durch Multithreading ~5x Performance-Verbesserung
+- Optimierung durch SIMD
 
 Gesplante Features:
-- Optimierung durch SIMD
 - Darstellung von Texturen
 - FOV-Anpassung durch Geschwindigkeitsveränderungen
 - Pause Menü

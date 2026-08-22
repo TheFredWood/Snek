@@ -8,7 +8,7 @@ nodes: [dynamic]Node
 BoundingBox :: struct {
 	lowerBounds:		Position,
 	upperBounds:		Position,
-	triangle:	^Triangle
+	triangle:		Triangle
 }
 
 Node :: struct {
@@ -30,12 +30,12 @@ GetScreenPosition :: proc(point: Point, direction: Point, horVec: Point, vertVec
 	length := DotProduct(direction, GetDistance(playerPosition, point))
 	xPosition := DotProduct(horVec, GetDistance(playerPosition, point)) / length
 	yPosition := DotProduct(vertVec, GetDistance(playerPosition, point)) / length
-	xPosition = f64(windowWidth) / 2.0 + xPosition * 400.0
-	yPosition = f64(windowHeight) / 2.0 - yPosition * 400.0
+	xPosition = f32(windowWidth) / 2.0 + xPosition * 400.0
+	yPosition = f32(windowHeight) / 2.0 - yPosition * 400.0
 	return u32(xPosition), u32(yPosition)
 }
 
-CullTriangleToFrustum :: proc (triangle: ^Triangle, frustum: [6]Plane) -> (bool, BoundingBox) {
+CullTriangleToFrustum :: proc (triangle: Triangle, frustum: [6]Plane) -> (bool, BoundingBox) {
 	playerDirection: Point = GetDirectionFromAngle(playerDirectionHorizontal, playerDirectionVertical)
 	upVec: Point = Point{0, 0, 1}
 	horVec: Point = CrossProduct(playerDirection, upVec)

@@ -22,7 +22,9 @@ descending: bool = false
 
 lastTime: time.Time = time.now()
 shapeFinished: bool
-triangles: [dynamic]Triangle 
+//triangles: [dynamic]Triangle
+globalTriangles: [dynamic]TriangleSoA8
+spareTriangleIndex := 0 //index from where there are spare triangles in globalTriangles ASoA8
 spareTriangle := Triangle{ Point{0, 0, 0}, Point{0, 0, 0}, Point{0, 0, 0}, 0}
 
 bitmapHandle: win.HBITMAP
@@ -33,11 +35,11 @@ bitmapWidth: u32
 bitmapHeight: u32
 bytesPerPixel: u8 = 4
 
-fovVertical: f64 = 90 / 360.0 * 2 * math.PI
-fovHorizontal: f64
+fovVertical: f32 = 90 / 360.0 * 2 * math.PI
+fovHorizontal: f32
 playerPosition: Point = {0, 0, 1}
-playerDirectionHorizontal: f64 = 0.0 / 360.0 * 2 * math.PI // Angle from 1, 0 clockwise
-playerDirectionVertical: f64 = 90.0 / 360.0 * 2 * math.PI // Angle from the bottom (0) to top (180)
+playerDirectionHorizontal: f32 = 0.0 / 360.0 * 2 * math.PI // Angle from 1, 0 clockwise
+playerDirectionVertical: f32 = 90.0 / 360.0 * 2 * math.PI // Angle from the bottom (0) to top (180)
 
 windowX: u32
 windowY: u32
@@ -48,6 +50,66 @@ startRenderingEvent: win.HANDLE
 workerDoneCounter: u32
 frameInfo: FrameInfo
 resetThreads: u32 = 0
+
+GetTriangleFromSoA8 :: proc(t: TriangleSoA8, index: int) -> Triangle {
+	return Triangle{
+		Point{
+			t.point1.x[index],
+			t.point1.y[index],
+			t.point1.z[index],
+		},
+		Point{
+			t.point2.x[index],
+			t.point2.y[index],
+			t.point2.z[index],
+		},
+		Point{
+			t.point3.x[index],
+			t.point3.y[index],
+			t.point3.z[index],
+		},
+		t.color[index]
+	}
+}
+
+AddTriangle :: proc(t: ^[dynamic]TriangleSoA8, spareTriangleIndex: ^int, triangle: Triangle) {
+	if (spareTriangleIndex^ == 0) {
+		append(t, MakeTriangleSoA8({
+			triangle,
+			spareTriangle,
+			spareTriangle,
+			spareTriangle,
+			spareTriangle,
+			spareTriangle,
+			spareTriangle,
+			spareTriangle
+		}))
+		spareTriangleIndex^ += 1
+		return
+	}
+
+	lastSoA8 := &t[len(t) - 1]
+
+	lastSoA8.point1.x[spareTriangleIndex^] = triangle.point1.x
+	lastSoA8.point1.y[spareTriangleIndex^] = triangle.point1.y
+	lastSoA8.point1.z[spareTriangleIndex^] = triangle.point1.z
+
+	lastSoA8.point2.x[spareTriangleIndex^] = triangle.point2.x
+	lastSoA8.point2.y[spareTriangleIndex^] = triangle.point2.y
+	lastSoA8.point2.z[spareTriangleIndex^] = triangle.point2.z
+
+	lastSoA8.point3.x[spareTriangleIndex^] = triangle.point3.x
+	lastSoA8.point3.y[spareTriangleIndex^] = triangle.point3.y
+	lastSoA8.point3.z[spareTriangleIndex^] = triangle.point3.z
+
+	lastSoA8.color[spareTriangleIndex^] = triangle.color
+	spareTriangleIndex^ += 1
+	if (spareTriangleIndex^ == 8) {
+		spareTriangleIndex^ = 0
+	}
+
+
+}
 
 TimeFunction2 :: proc(func: proc(), repititions: int){
 	for i := 0; i < 50; i = i + 1 {
@@ -98,7 +160,7 @@ TimeFunction :: proc(func: proc(), repititions: int){
 }
 
 MovePlayer :: proc () {
-	speed: f64 = 4 //units per second
+	speed: f32 = 4 //units per second
 	d := time.duration_seconds(time.since(lastTime))
 	direction: Point = {0, 0, 0}
 	if (walkingForward) {
@@ -122,19 +184,19 @@ MovePlayer :: proc () {
 	if (direction != {0, 0, 0}){
 		direction = NormalizeVector(direction)
 	}
-	playerPosition = {playerPosition.x +  direction.x * speed * d, playerPosition.y + direction.y * speed * d, playerPosition.z + direction.z * speed * d}
+	playerPosition = {playerPosition.x +  direction.x * speed * cast(f32)d, playerPosition.y + direction.y * speed * cast(f32)d, playerPosition.z + direction.z * speed * cast(f32)d}
 }
 
 RenderWindow :: proc() {
 	windowX, windowY, windowWidth, windowHeight = DrawDynamicAreaCentered(1, 16.0/9.0, 0x00FFFFFF)
-	fovHorizontal = f64(windowWidth) / f64(windowHeight) * f64(fovVertical)
+	fovHorizontal = f32(windowWidth) / f32(windowHeight) * f32(fovVertical)
 	playerDirection: Point = GetDirectionFromAngle(playerDirectionHorizontal, playerDirectionVertical)
 	
 	blockSize: u32 = 16
-	blocks := make([dynamic]Block, 0, u32(math.ceil(f64(windowWidth) / f64(blockSize)))* u32(math.ceil(f64(windowHeight) / f64(blockSize))))
+	blocks := make([dynamic]Block, 0, u32(math.ceil(f32(windowWidth) / f32(blockSize)))* u32(math.ceil(f32(windowHeight) / f32(blockSize))))
 
-	for j: u32 = 0; j < u32(math.ceil(f64(windowWidth) / f64(blockSize))); j = j + 1 {
-		for i: u32 = 0; i < u32(math.ceil(f64(windowHeight) / f64(blockSize))); i = i + 1 {
+	for j: u32 = 0; j < u32(math.ceil(f32(windowWidth) / f32(blockSize))); j = j + 1 {
+		for i: u32 = 0; i < u32(math.ceil(f32(windowHeight) / f32(blockSize))); i = i + 1 {
 			endX : u32 = (j + 1) * blockSize
 			endY : u32 = (i + 1) * blockSize
 			if (endY > windowHeight){
@@ -148,12 +210,16 @@ RenderWindow :: proc() {
 	}
 
 	frustum: [6]Plane = CreateFrustum(playerPosition, playerDirection)
-	boundingBoxes := make([dynamic]BoundingBox, 0, len(triangles))
+	boundingBoxes := make([dynamic]BoundingBox, 0, len(globalTriangles) * 4)
 	defer delete(boundingBoxes)
-	for &triangle in triangles {
-		isInside, boundingBox := CullTriangleToFrustum(&triangle, frustum)
-		if (isInside){
-			append(&boundingBoxes, boundingBox)
+	for &triangleSoA8 in globalTriangles {
+		for i := 0; i < 8; i += 1 {
+			triangle := GetTriangleFromSoA8(triangleSoA8, i)
+			isInside, boundingBox := CullTriangleToFrustum(triangle, frustum)
+			if (isInside){
+				append(&boundingBoxes, boundingBox)
+			}
+
 		}
 	}
 
@@ -210,7 +276,7 @@ RenderBlockIfAvailable :: proc "stdcall" (param: win.LPVOID) -> win.DWORD {
 	intrinsics.atomic_add(&resetThreads, 1)
 	//Wait for Task to arrive with the FrameInfo
 	win.WaitForSingleObject(startRenderingEvent, win.INFINITE)
-	relevantTriangles := make ([dynamic]TriangleSoA4 , 0, (len(args.frameInfo.boundingBoxes) + 4) / 4)
+	relevantTriangles := make ([dynamic]TriangleSoA8 , 0, (len(args.frameInfo.boundingBoxes) + 8) / 8)
 
 	defer delete(relevantTriangles)
 	for true {
@@ -231,7 +297,7 @@ RenderBlockIfAvailable :: proc "stdcall" (param: win.LPVOID) -> win.DWORD {
 	return 0
 }
 
-RenderBlock :: proc (param: win.LPVOID, blockIndex: int, relevantTriangles: ^[dynamic]TriangleSoA4) {
+RenderBlock :: proc (param: win.LPVOID, blockIndex: int, relevantTriangles: ^[dynamic]TriangleSoA8) {
 	args := (^ThreadArgs)(param)
 	block := args.frameInfo.blocks[blockIndex]
 	horVec := args.frameInfo.horVec
@@ -240,25 +306,26 @@ RenderBlock :: proc (param: win.LPVOID, blockIndex: int, relevantTriangles: ^[dy
 	boundingBoxes := args.frameInfo.boundingBoxes
 
 	countTriangles: int = 0
-	t: [4]^Triangle
+	t: [8]Triangle
 	for boundingBox in boundingBoxes {
 		if (boundingBox.lowerBounds.y <= block.end.y &&
 			boundingBox.upperBounds.y >= block.start.y &&
 			boundingBox.lowerBounds.x <= block.end.x &&
 			boundingBox.upperBounds.x >= block.start.x
 			) {
-			t[countTriangles % 4] = boundingBox.triangle
+			t[countTriangles % 8] = boundingBox.triangle
+			//fmt.println(boundingBox.triangle)
 			countTriangles = countTriangles + 1
-			if (countTriangles % 4 == 0) {
-				append(relevantTriangles, MakeTriangleSoA4(t[0], t[1], t[2], t[3]))
+			if (countTriangles % 8 == 0) {
+				append(relevantTriangles, MakeTriangleSoA8(t))
 			}
 		}
 	}
-	if (countTriangles % 4 != 0){
-		for i: int = countTriangles % 4; i < 4; i = i + 1 {
-			t[i] = &spareTriangle
+	if (countTriangles % 8 != 0){
+		for i: int = countTriangles % 8; i < 8; i = i + 1 {
+			t[i] = spareTriangle
 		}
-		append(relevantTriangles, MakeTriangleSoA4(t[0], t[1], t[2], t[3]))
+		append(relevantTriangles, MakeTriangleSoA8(t))
 	}
 
 	if (len(relevantTriangles) == 0){ 
@@ -266,21 +333,33 @@ RenderBlock :: proc (param: win.LPVOID, blockIndex: int, relevantTriangles: ^[dy
 	}
 
 	s: S
-	s.ppx = transmute(simd.f64x4)[4]f64{
+	s.ppx = transmute(simd.f32x8)[8]f32{
+		playerPosition.x,
+		playerPosition.x,
+		playerPosition.x,
+		playerPosition.x,
 		playerPosition.x,
 		playerPosition.x,
 		playerPosition.x,
 		playerPosition.x
 
 	}
-	s.ppy = transmute(simd.f64x4)[4]f64{
+	s.ppy = transmute(simd.f32x8)[8]f32{
+		playerPosition.y,
+		playerPosition.y,
+		playerPosition.y,
+		playerPosition.y,
 		playerPosition.y,
 		playerPosition.y,
 		playerPosition.y,
 		playerPosition.y
 
 	}
-	s.ppz = transmute(simd.f64x4)[4]f64{
+	s.ppz = transmute(simd.f32x8)[8]f32{
+		playerPosition.z,
+		playerPosition.z,
+		playerPosition.z,
+		playerPosition.z,
 		playerPosition.z,
 		playerPosition.z,
 		playerPosition.z,
@@ -290,30 +369,42 @@ RenderBlock :: proc (param: win.LPVOID, blockIndex: int, relevantTriangles: ^[dy
 	pixels := slice.from_ptr(cast(^u32)bitmapMemory, cast(int)(bitmapHeight * bitmapWidth))
 	for i: u32 = block.start.y; i < block.end.y; i = i + 1 {
 		section := pixels[windowX + (i + windowY) * bitmapWidth:windowX + windowWidth + (i + windowY) * bitmapWidth]
-		yOffset := Mult(vertVec, (f64(windowHeight) / 2.0 - f64(i)) / 400)
+		yOffset := Mult(vertVec, (f32(windowHeight) / 2.0 - f32(i)) / 400)
 		yOffsetDirection := Add(playerDirection, yOffset)
 		for j: u32 = block.start.x; j < block.end.x; j = j + 1 {
-			shortestBeam : f64 = -1
+			shortestBeam : f32 = -1
 			shortestBeamColor: u32 = 0x00FFFFFF
-			xOffset := Mult(horVec, (f64(j) - f64(windowWidth) / 2.0) / 400.0)
+			xOffset := Mult(horVec, (f32(j) - f32(windowWidth) / 2.0) / 400.0)
 			pixelPlayerDirection := Add(yOffsetDirection, xOffset)
 			k: int
 
-			s.pppx = transmute(simd.f64x4)[4]f64{
+			s.pppx = transmute(simd.f32x8)[8]f32{
+				pixelPlayerDirection.x,
+				pixelPlayerDirection.x,
+				pixelPlayerDirection.x,
+				pixelPlayerDirection.x,
 				pixelPlayerDirection.x,
 				pixelPlayerDirection.x,
 				pixelPlayerDirection.x,
 				pixelPlayerDirection.x
 
 			}
-			s.pppy = transmute(simd.f64x4)[4]f64{
+			s.pppy = transmute(simd.f32x8)[8]f32{
+				pixelPlayerDirection.y,
+				pixelPlayerDirection.y,
+				pixelPlayerDirection.y,
+				pixelPlayerDirection.y,
 				pixelPlayerDirection.y,
 				pixelPlayerDirection.y,
 				pixelPlayerDirection.y,
 				pixelPlayerDirection.y
 
 			}
-			s.pppz = transmute(simd.f64x4)[4]f64{
+			s.pppz = transmute(simd.f32x8)[8]f32{
+				pixelPlayerDirection.z,
+				pixelPlayerDirection.z,
+				pixelPlayerDirection.z,
+				pixelPlayerDirection.z,
 				pixelPlayerDirection.z,
 				pixelPlayerDirection.z,
 				pixelPlayerDirection.z,
@@ -322,31 +413,31 @@ RenderBlock :: proc (param: win.LPVOID, blockIndex: int, relevantTriangles: ^[dy
 			}
 			for k = 0; k < len(relevantTriangles); k = k + 1 {
 				//startTime := time.now()	
-				s.tx1 = transmute(simd.f64x4)relevantTriangles[k].point1.x
-				s.ty1 = transmute(simd.f64x4)relevantTriangles[k].point1.y
-				s.tz1 = transmute(simd.f64x4)relevantTriangles[k].point1.z
+				s.tx1 = transmute(simd.f32x8)relevantTriangles[k].point1.x
+				s.ty1 = transmute(simd.f32x8)relevantTriangles[k].point1.y
+				s.tz1 = transmute(simd.f32x8)relevantTriangles[k].point1.z
 
-				s.tx2 = transmute(simd.f64x4)relevantTriangles[k].point2.x
-				s.ty2 = transmute(simd.f64x4)relevantTriangles[k].point2.y
-				s.tz2 = transmute(simd.f64x4)relevantTriangles[k].point2.z
+				s.tx2 = transmute(simd.f32x8)relevantTriangles[k].point2.x
+				s.ty2 = transmute(simd.f32x8)relevantTriangles[k].point2.y
+				s.tz2 = transmute(simd.f32x8)relevantTriangles[k].point2.z
 
-				s.tx3 = transmute(simd.f64x4)relevantTriangles[k].point3.x
-				s.ty3 = transmute(simd.f64x4)relevantTriangles[k].point3.y
-				s.tz3 = transmute(simd.f64x4)relevantTriangles[k].point3.z
+				s.tx3 = transmute(simd.f32x8)relevantTriangles[k].point3.x
+				s.ty3 = transmute(simd.f32x8)relevantTriangles[k].point3.y
+				s.tz3 = transmute(simd.f32x8)relevantTriangles[k].point3.z
 
-				s.tc  = transmute(simd.u32x4)relevantTriangles[k].color
+				s.tc  = transmute(simd.u32x8)relevantTriangles[k].color
 
 				beamLength, maskResult := CheckCollisionSIMD(s)
-				mask := transmute([4]u64)maskResult
+				mask := transmute([8]u32)maskResult
 
-				if ((k + 1) * 4 > countTriangles){
-					for l := countTriangles % 4; l < 4; l = l + 1 {
+				if ((k + 1) * 8 > countTriangles){
+					for l := countTriangles % 8; l < 8; l = l + 1 {
 						mask[l]	 = 0
 					}
 				}
 
 				if mask != 0 {
-					shortestBeam, shortestBeamColor = CompareBeams(transmute([4]f64)beamLength, transmute([4]u32)s.tc, mask, shortestBeam, shortestBeamColor)
+					shortestBeam, shortestBeamColor = CompareBeams(transmute([8]f32)beamLength, transmute([8]u32)s.tc, mask, shortestBeam, shortestBeamColor)
 				}
 				//fmt.println("Tme taken:", time.since(startTime))
 			}
@@ -357,12 +448,12 @@ RenderBlock :: proc (param: win.LPVOID, blockIndex: int, relevantTriangles: ^[dy
 }
 
 S :: struct {
-	ppx, ppy, ppz: #simd[4]f64, //playerPosition
-	pppx, pppy, pppz: #simd[4]f64, //pixelPlayerDirection
-	tx1, ty1, tz1: #simd[4]f64, //triangle point1
-	tx2, ty2, tz2: #simd[4]f64, //triangle point2
-	tx3, ty3, tz3: #simd[4]f64, //triangle point3
-	tc: #simd[4]u32, //triangle color
+	ppx, ppy, ppz: #simd[8]f32, //playerPosition
+	pppx, pppy, pppz: #simd[8]f32, //pixelPlayerDirection
+	tx1, ty1, tz1: #simd[8]f32, //triangle point1
+	tx2, ty2, tz2: #simd[8]f32, //triangle point2
+	tx3, ty3, tz3: #simd[8]f32, //triangle point3
+	tc: #simd[8]u32, //triangle color
 
 }
 
@@ -423,20 +514,26 @@ main :: proc() {
 			triangle4: Triangle = Triangle{Point{5.0, -1.0, 0.0}, Point{5.0, 1.0, 0.0}, Point{4.0, 0.0, 2.0}, 0x00FF007F }
 			floor: Triangle = Triangle{Point{-100, -100, 0.0}, Point{100, -100, 0.0}, Point{100, 100, 0.0}, 0x0000FF00 }
 			floor2: Triangle = Triangle{Point{-100, -100, 0.0}, Point{-100, 100, 0.0}, Point{100, 100, 0.0}, 0x0000FF00 }
-			append(&triangles, triangle)
-			append(&triangles, triangle2)
-			append(&triangles, triangle3)
-			append(&triangles, triangle4)
-			append(&triangles, floor)
-			append(&triangles, floor2)
+			AddTriangle(&globalTriangles, &spareTriangleIndex, triangle)
+			AddTriangle(&globalTriangles, &spareTriangleIndex, triangle2)
+			AddTriangle(&globalTriangles, &spareTriangleIndex, triangle3)
+			AddTriangle(&globalTriangles, &spareTriangleIndex, triangle4)
+			AddTriangle(&globalTriangles, &spareTriangleIndex, floor)
+			AddTriangle(&globalTriangles, &spareTriangleIndex, floor2)
+			// append(&triangles, triangle)
+			// append(&triangles, triangle2)
+			// append(&triangles, triangle3)
+			// append(&triangles, triangle4)
+			// append(&triangles, floor)
+			// append(&triangles, floor2)
 
 			rand.reset(1)
 			for i := 0; i < 1000; i = i + 1 {
-				p1 := Point{rand.float64_range(-100.0, 100), rand.float64_range(-100.0, 100), rand.float64_range(-100.0, 100)}
-				p2 := Point{rand.float64_range(-100.0, 100), rand.float64_range(-100.0, 100), rand.float64_range(-100.0, 100)}
-				p3 := Point{rand.float64_range(-100.0, 100), rand.float64_range(-100.0, 100), rand.float64_range(-100.0, 100)}
-				append(&triangles, Triangle{p1, p2, p3, rand.uint32()})
-				// AppendTriangleSoA(&triangles, Triangle{p1, p2, p3, rand.uint32()})
+				p1 := Point{rand.float32_range(-100.0, 100), rand.float32_range(-100.0, 100), rand.float32_range(-100.0, 100)}
+				p2 := Point{rand.float32_range(-100.0, 100), rand.float32_range(-100.0, 100), rand.float32_range(-100.0, 100)}
+				p3 := Point{rand.float32_range(-100.0, 100), rand.float32_range(-100.0, 100), rand.float32_range(-100.0, 100)}
+				//append(&triangles, Triangle{p1, p2, p3, rand.uint32()})
+				AddTriangle(&globalTriangles, &spareTriangleIndex, Triangle{p1, p2, p3, rand.uint32()})
 			}
 
 			running = true
@@ -460,10 +557,10 @@ main :: proc() {
 			//TimeFunction2(proc(){RenderWindow()}, 100)
 			//TimeFunction2(proc(){RenderWindow2()}, 100)
 			//return
-			
 			fmt.println(bitmapWidth, bitmapHeight)
 
 			i := 0
+			//fmt.println(globalTriangles)
 			for running {
 				//win.ClipCursor(&screenRect)
 				message: win.MSG
@@ -502,7 +599,6 @@ main :: proc() {
 				//i = i + 1
 			}
 		
-
 		} else {
 			//logging
 		}
@@ -542,8 +638,8 @@ Win32MainWindowCallback :: proc "std" (
 		win.GetRawInputData(win.HRAWINPUT(lParam), win.RID_INPUT, &data, &pcbSize, size_of(win.RAWINPUTHEADER))
 		deltaX := data.data.mouse.lLastX
 		deltaY := data.data.mouse.lLastY
-		playerDirectionHorizontal = playerDirectionHorizontal - f64(deltaX) /1000
-		playerDirectionVertical = playerDirectionVertical - f64(deltaY) /1000
+		playerDirectionHorizontal = playerDirectionHorizontal - f32(deltaX) /1000
+		playerDirectionVertical = playerDirectionVertical - f32(deltaY) /1000
 	case win.WM_SIZE:
 		clientRect: win.RECT
 		win.GetClientRect(window, &clientRect)
