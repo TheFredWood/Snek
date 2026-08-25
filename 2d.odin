@@ -11,6 +11,12 @@ BoundingBox :: struct {
 	triangle:		Triangle
 }
 
+BoundingBoxSoA8 :: struct {
+	lowerBounds:		PositionSoA8,
+	upperBounds:		PositionSoA8,
+	triangles:		TriangleSoA8Diff
+}
+
 Node :: struct {
 	x:		f16,
 	y:		f16,
@@ -19,6 +25,11 @@ Node :: struct {
 Position :: struct {
 	x:		u32,
 	y:		u32,
+}
+
+PositionSoA8 :: struct {
+	x:		[8]u32,
+	y:		[8]u32,
 }
 
 Block :: struct {
@@ -35,15 +46,65 @@ GetScreenPosition :: proc(point: Point, direction: Point, horVec: Point, vertVec
 	return u32(xPosition), u32(yPosition)
 }
 
-CullTriangleToFrustum :: proc (triangle: Triangle, frustum: [6]Plane) -> (bool, BoundingBox) {
-	playerDirection: Point = GetDirectionFromAngle(playerDirectionHorizontal, playerDirectionVertical)
-	upVec: Point = Point{0, 0, 1}
-	horVec: Point = CrossProduct(playerDirection, upVec)
-	horVec = NormalizeVector(horVec)
-	vertVec := CrossProduct(playerDirection, horVec)
-	vertVec = NormalizeVector(vertVec)
-	vertVec = Mult(vertVec, -1)
+CullTriangleToFrustumSIMD :: proc (triangles: TriangleSoA8Diff, frustum: [6]Plane, playerDirection: Point, horVec: Point, vertVec: Point) -> ([8]u32, BoundingBoxSoA8) {
+	boundingBoxes: [8]BoundingBox	
+	isInside: [8]u32
+	for i := 0; i < 8; i += 1 {
+		triangle := GetTriangleFromSoA8Diff(triangles, i)
+		res: bool
+		res, boundingBoxes[i] = CullTriangleToFrustum(triangle, frustum, playerDirection, horVec, vertVec)
+		isInside[i] = u32(res)
 
+	}
+	return isInside, BoundingBoxSoA8{
+		PositionSoA8{
+			{
+				boundingBoxes[0].lowerBounds.x,
+				boundingBoxes[1].lowerBounds.x,
+				boundingBoxes[2].lowerBounds.x,
+				boundingBoxes[3].lowerBounds.x,
+				boundingBoxes[4].lowerBounds.x,
+				boundingBoxes[5].lowerBounds.x,
+				boundingBoxes[6].lowerBounds.x,
+				boundingBoxes[7].lowerBounds.x,
+			},
+			{
+				boundingBoxes[0].lowerBounds.y,
+				boundingBoxes[1].lowerBounds.y,
+				boundingBoxes[2].lowerBounds.y,
+				boundingBoxes[3].lowerBounds.y,
+				boundingBoxes[4].lowerBounds.y,
+				boundingBoxes[5].lowerBounds.y,
+				boundingBoxes[6].lowerBounds.y,
+				boundingBoxes[7].lowerBounds.y,
+			},
+		},	
+		PositionSoA8{
+			{
+				boundingBoxes[0].upperBounds.x,
+				boundingBoxes[1].upperBounds.x,
+				boundingBoxes[2].upperBounds.x,
+				boundingBoxes[3].upperBounds.x,
+				boundingBoxes[4].upperBounds.x,
+				boundingBoxes[5].upperBounds.x,
+				boundingBoxes[6].upperBounds.x,
+				boundingBoxes[7].upperBounds.x,
+			},
+			{
+				boundingBoxes[0].upperBounds.y,
+				boundingBoxes[1].upperBounds.y,
+				boundingBoxes[2].upperBounds.y,
+				boundingBoxes[3].upperBounds.y,
+				boundingBoxes[4].upperBounds.y,
+				boundingBoxes[5].upperBounds.y,
+				boundingBoxes[6].upperBounds.y,
+				boundingBoxes[7].upperBounds.y,
+			},
+		},	
+		triangles
+	}
+}
+CullTriangleToFrustum :: proc (triangle: Triangle, frustum: [6]Plane, playerDirection: Point, horVec: Point, vertVec: Point) -> (bool, BoundingBox) {
 	points: [dynamic]Point
 	append(&points, triangle.point1)
 	append(&points, triangle.point2)
