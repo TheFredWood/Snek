@@ -150,7 +150,7 @@ RenderWindow :: proc() {
 	}
 
 	frustum: [6]Plane = CreateFrustum(playerPosition, playerDirection)
-	boundingBoxes := make([dynamic]BoundingBox, 0, len(globalTriangles))
+	boundingBoxes := make([dynamic]BoundingBoxSoA8, 0, len(globalTriangles))
 	defer delete(boundingBoxes)
 	upVec: Point = Point{0, 0, 1}
 	horVec: Point = CrossProduct(playerDirection, upVec)
@@ -159,14 +159,12 @@ RenderWindow :: proc() {
 	vertVec = NormalizeVector(vertVec)
 	vertVec = Mult(vertVec, -1)
 	for &triangleSoA8 in globalTriangles {
-		for i:= 0; i < 8; i += 1 {
-			triangle := GetTriangleFromSoA8Diff(triangleSoA8, i)
-			isInside, boundingBox := CullTriangleToFrustum(triangle , frustum, playerDirection, horVec, vertVec)
-			if isInside {
-				append(&boundingBoxes, boundingBox)
-			}
+			isInside, boundingBoxSoA8 := CullTriangleToFrustumSIMD(triangleSoA8 , frustum, playerDirection, horVec, vertVec)
+			if simd.reduce_or(transmute(simd.u32x8)isInside) == 1 {
+				append(&boundingBoxes, boundingBoxSoA8)
 		}
 	}
+	//fmt.println(len(boundingBoxes))
 	win.ResetEvent(startRenderingEvent)
 	intrinsics.atomic_thread_fence(.Release)
 	frameInfo.blocks = blocks
@@ -204,7 +202,7 @@ FrameInfo :: struct {
 	horVec: Point,
 	vertVec: Point,
 	playerDirection: Point,
-	boundingBoxes: [dynamic]BoundingBox,
+	boundingBoxes: [dynamic]BoundingBoxSoA8,
 }
 
 RenderBlockIfAvailable :: proc "stdcall" (param: win.LPVOID) -> win.DWORD {
@@ -243,21 +241,27 @@ RenderBlock :: proc (param: win.LPVOID, blockIndex: int, relevantTriangles: ^[dy
 	boundingBoxes := args.frameInfo.boundingBoxes
 	counter := 0
 	for boundingBox in boundingBoxes {
-
-		if (boundingBox.lowerBounds.y <= block.end.y &&
-			boundingBox.upperBounds.y >= block.start.y &&
-			boundingBox.lowerBounds.x <= block.end.x &&
-			boundingBox.upperBounds.x >=  block.start.x
-			) {
-		
+		/*
+		fmt.println(simd.reduce_or(simd.lanes_le(transmute(simd.u32x8)boundingBox.lowerBounds.y, cast(simd.u32x8)block.end.y) &
+			simd.lanes_ge(transmute(simd.u32x8)boundingBox.upperBounds.y, cast(simd.u32x8)block.start.y) &
+			simd.lanes_le(transmute(simd.u32x8)boundingBox.lowerBounds.x, cast(simd.u32x8)block.end.x) &
+			simd.lanes_ge(transmute(simd.u32x8)boundingBox.upperBounds.x, cast(simd.u32x8)block.start.x)
+			))
+			*/
+		if simd.reduce_or(simd.lanes_le(transmute(simd.u32x8)boundingBox.lowerBounds.y, cast(simd.u32x8)block.end.y) &
+			simd.lanes_ge(transmute(simd.u32x8)boundingBox.upperBounds.y, cast(simd.u32x8)block.start.y) &
+			simd.lanes_le(transmute(simd.u32x8)boundingBox.lowerBounds.x, cast(simd.u32x8)block.end.x) &
+			simd.lanes_ge(transmute(simd.u32x8)boundingBox.upperBounds.x, cast(simd.u32x8)block.start.x)
+			) >= 1 {
+			append(relevantTriangles, boundingBox.triangles)
 		}
-		AddTriangleDiff(relevantTriangles, &counter, boundingBox.triangle)
+		//AddTriangleDiff(relevantTriangles, &counter, boundingBox.triangle)
 	}
 
 	if (len(relevantTriangles) == 0){ 
 		return
 	}
-
+	playerPositionSoA8 := PointSoA8{cast(simd.f32x8)playerPosition.x, cast(simd.f32x8)playerPosition.y, cast(simd.f32x8)playerPosition.z}
 	pixels := slice.from_ptr(cast(^u32)bitmapMemory, cast(int)(bitmapHeight * bitmapWidth))
 	for i: u32 = block.start.y; i < block.end.y; i = i + 1 {
 		section := pixels[windowX + (i + windowY) * bitmapWidth:windowX + windowWidth + (i + windowY) * bitmapWidth]
@@ -268,16 +272,17 @@ RenderBlock :: proc (param: win.LPVOID, blockIndex: int, relevantTriangles: ^[dy
 			shortestBeamColor: u32 = 0x00FFFFFF
 			xOffset := Mult(horVec, (f32(j) - f32(windowWidth) / 2.0) / 400.0)
 			pixelPlayerDirection := Add(yOffsetDirection, xOffset)
+			pixelPlayerDirectionSoA8 := PointSoA8{cast(simd.f32x8)pixelPlayerDirection.x, cast(simd.f32x8)pixelPlayerDirection.y, cast(simd.f32x8)pixelPlayerDirection.z}
 
 			for k := 0; k < len(relevantTriangles); k = k + 1 {
 
 				beamLength, maskResult := CheckCollisionSIMDDiff(
-					relevantTriangles[k],
-					playerPosition,
-					pixelPlayerDirection)	
+					&relevantTriangles[k],
+					&playerPositionSoA8,
+					&pixelPlayerDirectionSoA8)	
 
 				if maskResult != 0 {
-					shortestBeam, shortestBeamColor = CompareBeams(transmute([8]f32)beamLength, relevantTriangles[k].color, transmute([8]u32)maskResult, shortestBeam, shortestBeamColor)
+					shortestBeam, shortestBeamColor = CompareBeams(transmute([8]f32)beamLength, transmute([8]u32)relevantTriangles[k].color, transmute([8]u32)maskResult, shortestBeam, shortestBeamColor)
 				}
 			}
 
@@ -376,50 +381,55 @@ main :: proc() {
 
 			win.ShowCursor(false)
 			//win.MapWindowPoints(window, nil, win.LPPOINT(&rect), 2)
-			//TimeFunction2(proc(){RenderWindow()}, 100)
-			//TimeFunction2(proc(){RenderWindow2()}, 100)
-			//return
-			fmt.println(bitmapWidth, bitmapHeight)
+			benchmarking := false
+			if (benchmarking) {
+				TimeFunction2(proc(){RenderWindow()}, 100)
+				return
+			}else {
+				fmt.println(bitmapWidth, bitmapHeight)
 
-			i := 0
-			//RenderWindow()
-			//fmt.println(globalTriangles)
-			for running {
-				//win.ClipCursor(&screenRect)
-				message: win.MSG
-				for win.PeekMessageW(&message, nil, 0, 0, win.PM_REMOVE) {
-					if (message.message == win.WM_QUIT) {
-						running = false
+				i := 0
+				//RenderWindow()
+				//fmt.println(globalTriangles)
+				for running {
+					//win.ClipCursor(&screenRect)
+					message: win.MSG
+					for win.PeekMessageW(&message, nil, 0, 0, win.PM_REMOVE) {
+						if (message.message == win.WM_QUIT) {
+							running = false
+						}
+						win.TranslateMessage(&message)
+						win.DispatchMessageW(&message)
 					}
-					win.TranslateMessage(&message)
-					win.DispatchMessageW(&message)
+
+					clientRect: win.RECT
+					win.GetClientRect(window, &clientRect)
+					windowWidth: i32 = clientRect.right - clientRect.left
+					windowHeight: i32 = clientRect.bottom - clientRect.top
+					MovePlayer()
+					if (i % 2 == 1) {
+						//RenderWindow2()
+					} else {
+						RenderWindow()
+					}
+
+					deviceContext: win.HDC = win.GetDC(window)
+					Win32UpdateWindow(deviceContext, &clientRect, 0, 0, windowWidth, windowHeight)
+					win.ReleaseDC(window, deviceContext)
+
+					if (time.since(secondTimer) >= time.Second){
+						fmt.println("done, took", time.since(currentTime))
+
+						secondTimer = time.now()
+
+					}
+
+					lastTime = currentTime
+					currentTime = time.now()
+					//i = i + 1
 				}
 
-				clientRect: win.RECT
-				win.GetClientRect(window, &clientRect)
-				windowWidth: i32 = clientRect.right - clientRect.left
-				windowHeight: i32 = clientRect.bottom - clientRect.top
-				MovePlayer()
-				if (i % 2 == 1) {
-					//RenderWindow2()
-				} else {
-					RenderWindow()
-				}
 
-				deviceContext: win.HDC = win.GetDC(window)
-				Win32UpdateWindow(deviceContext, &clientRect, 0, 0, windowWidth, windowHeight)
-				win.ReleaseDC(window, deviceContext)
-
-				if (time.since(secondTimer) >= time.Second){
-					fmt.println("done, took", time.since(currentTime))
-
-					secondTimer = time.now()
-
-				}
-
-				lastTime = currentTime
-				currentTime = time.now()
-				//i = i + 1
 			}
 		} else {
 			//logging
