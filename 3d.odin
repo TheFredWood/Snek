@@ -517,29 +517,38 @@ CheckCollisionSIMDDiff :: #force_inline proc(t: ^TriangleSoA8Diff, pp: ^PointSoA
 
 	det := pvecx * t.edge1.x + pvecy * t.edge1.y + pvecz * t.edge1.z
 
+	//mask is 1 if result valid
+	mask := (simd.lanes_gt(det, 0.00001) | simd.lanes_lt(det, -0.00001))
 
-	tvecx := simd.sub(pp.x, t.point1.x) //tvec :=
+	if simd.reduce_or(mask) == 0 {
+	    return simd.f32x8(0.0), mask
+	}
+
+	tvecx := simd.sub(pp.x, t.point1.x)
 	tvecy := simd.sub(pp.y, t.point1.y)
 	tvecz := simd.sub(pp.z, t.point1.z)
 	
-	invDet := simd.div(simd.f32x8(1.0), det) //invDet :=
+	invDet := simd.div(simd.f32x8(1.0), det)
 	
 	length1 := simd.mul(tvecx * pvecx + tvecy * pvecy + tvecz * pvecz, invDet)
+	mask = mask & simd.lanes_gt(length1, 0.0) & simd.lanes_le(length1, 1.0)
+	if simd.reduce_or(mask) == 0 {
+	    return simd.f32x8(0.0), mask
+	}
 
-
-	qvecx := tvecy * t.edge1.z - tvecz * t.edge1.y // qvec :=
+	qvecx := tvecy * t.edge1.z - tvecz * t.edge1.y
 	qvecy := tvecz * t.edge1.x - tvecx * t.edge1.z
 	qvecz := tvecx * t.edge1.y - tvecy * t.edge1.x
-	length2 := simd.mul(ppd.x * qvecx + ppd.y * qvecy + ppd.z * qvecz, invDet) // length2 :=
+	length2 := simd.mul(ppd.x * qvecx + ppd.y * qvecy + ppd.z * qvecz, invDet)
 
+	mask = mask & simd.lanes_gt(length2, 0.0) & simd.lanes_le(simd.add(length1, length2), 1.0)
+	if simd.reduce_or(mask) == 0 {
+	    return simd.f32x8(0.0), mask
+	}
 
-	lengthBeam := simd.mul(t.edge2.x * qvecx + t.edge2.y * qvecy + t.edge2.z * qvecz, invDet) //lengthBeam :=
+	lengthBeam := simd.mul(t.edge2.x * qvecx + t.edge2.y * qvecy + t.edge2.z * qvecz, invDet)
 
-	//mask is 1 if result valid
-	mask: #simd[8]u32 = (simd.lanes_gt(det, 0.00001) | simd.lanes_lt(det, -0.00001)) &
-		simd.lanes_gt(length1, 0.0) & simd.lanes_le(length1, 1.0) &
-		simd.lanes_gt(length2, 0.0) & simd.lanes_le(simd.add(length1, length2), 1.0) &
-		simd.lanes_ge(lengthBeam, 0.0)
+	mask = mask & simd.lanes_ge(lengthBeam, 0.0)
 
 	return lengthBeam, mask
 }

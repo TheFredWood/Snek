@@ -240,14 +240,14 @@ RenderBlock :: proc (param: win.LPVOID, blockIndex: int, relevantTriangles: ^[dy
 	playerDirection := args.frameInfo.playerDirection
 	boundingBoxes := args.frameInfo.boundingBoxes
 	counter := 0
-	for boundingBox in boundingBoxes {
+	triangles: [8]Triangle
+	for &boundingBox in boundingBoxes {
 		/*
 		fmt.println(simd.reduce_or(simd.lanes_le(transmute(simd.u32x8)boundingBox.lowerBounds.y, cast(simd.u32x8)block.end.y) &
 			simd.lanes_ge(transmute(simd.u32x8)boundingBox.upperBounds.y, cast(simd.u32x8)block.start.y) &
 			simd.lanes_le(transmute(simd.u32x8)boundingBox.lowerBounds.x, cast(simd.u32x8)block.end.x) &
 			simd.lanes_ge(transmute(simd.u32x8)boundingBox.upperBounds.x, cast(simd.u32x8)block.start.x)
 			))
-			*/
 		if simd.reduce_or(simd.lanes_le(transmute(simd.u32x8)boundingBox.lowerBounds.y, cast(simd.u32x8)block.end.y) &
 			simd.lanes_ge(transmute(simd.u32x8)boundingBox.upperBounds.y, cast(simd.u32x8)block.start.y) &
 			simd.lanes_le(transmute(simd.u32x8)boundingBox.lowerBounds.x, cast(simd.u32x8)block.end.x) &
@@ -255,7 +255,32 @@ RenderBlock :: proc (param: win.LPVOID, blockIndex: int, relevantTriangles: ^[dy
 			) >= 1 {
 			append(relevantTriangles, boundingBox.triangles)
 		}
+		*/
+		t := GetTrianglesFromSoA8Diff(&boundingBox.triangles)
+		for i := 0; i < 8; i += 1 {
+			if (	boundingBox.lowerBounds.x[i] <= block.end.x &&
+				boundingBox.lowerBounds.y[i] <= block.end.y &&
+				boundingBox.upperBounds.x[i] >= block.start.x &&
+				boundingBox.upperBounds.y[i] >= block.start.y) {
+
+				triangles[counter] = t[i]
+				counter += 1
+				if (counter == 8) {
+					append(relevantTriangles, MakeTriangleSoA8Diff(triangles))
+					counter = 0
+				}
+					
+			}
+
+		}
+
 		//AddTriangleDiff(relevantTriangles, &counter, boundingBox.triangle)
+	}
+	if (counter != 0){
+		for i := counter; i < 8; i = i + 1 {
+			triangles[i] = spareTriangle
+		}
+		append(relevantTriangles, MakeTriangleSoA8Diff(triangles))
 	}
 
 	if (len(relevantTriangles) == 0){ 
